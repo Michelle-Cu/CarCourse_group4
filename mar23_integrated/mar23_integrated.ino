@@ -25,6 +25,13 @@ long baudRates[] = {9600, 19200, 38400, 57600, 115200, 4800, 2400, 1200, 230400}
 bool moduleReady = false;
 
 int time = 0;
+unsigned long startTime;
+int trackCyclePeriod = 10;
+unsigned long trackCycleCnt = 0;
+unsigned long loopCycleCnt = 0;
+int avgLoadTime;
+int avgTrackCycleTime;
+
 int motorSpeed = 150, dSpeed = 150; // Default speed (0-255)
 int thres[6] = { 0, 500, 555, 686, 432, 583 };
 
@@ -39,6 +46,8 @@ void setup() {
 
   SPI.begin();
   mfrc522.PCD_Init();
+
+  startTime = millis();
 
   while (!Serial);
   Serial.println("Initializing HM-10...");
@@ -88,7 +97,6 @@ void setup() {
 
 
 void loop() {
-
   if (Serial3.available()) {
     Serial.println(Serial3.readString());
   }
@@ -116,13 +124,6 @@ void loop() {
     }
   }
 
-  int val[10];
-  val[1] = analogRead( analog1 ), val[2] = analogRead( analog2 ), val[3] = analogRead( analog3 ), val[4] = analogRead( analog4 ), val[5] = analogRead( analog5 );
-  for(int i=1; i<=5; i++){
-    if( time % 1000 != 0) break;
-    Serial.print(val[i]); Serial.print("  "); if(i==5) Serial.print("\n");
-  }
-
   // 3. RFID Scanning
   if (mfrc522.PICC_IsNewCardPresent() && mfrc522.PICC_ReadCardSerial()) {
     Serial.print("Card UID:");
@@ -134,7 +135,25 @@ void loop() {
     mfrc522.PICC_HaltA(); // Stop reading
   }
 
-    track( val );
+  avgLoadTime = (avgLoadTime * loopCycleCnt + millis() - startTime) / (loopCycleCnt+1)
+
+  int val[10];
+  // 4. uirReading and Tracking
+  if (millis() - startTime >= trackCyclePeriod) {
+    avgTrackCycleTime = (avgTrackCycleTime * trackCycleCnt + millis() - startTime) / (trackCycleCnt+1)
+    val[1] = analogRead( analog1 ), val[2] = analogRead( analog2 ), val[3] = analogRead( analog3 ), val[4] = analogRead( analog4 ), val[5] = analogRead( analog5 );
+    for(int i=1; i<=5; i++){
+      if( time % 1000 != 0) break;
+      Serial.print(val[i]); Serial.print("  "); if(i==5) Serial.print("\n");
+    }
+    track(val);
+    trackCycleCnt++;
+    startTime = millis();
+  }
+
+  loopCycleCnt++;
+  Serial.print("Loop: "); Serial.print(loopCycleCnt); Serial.print(" AvgLoadTime: "); Serial.println(avgLoadTime);
+
 }
 
 
