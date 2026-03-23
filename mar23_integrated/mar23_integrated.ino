@@ -32,10 +32,14 @@ unsigned long loopCycleCnt = 0;
 int avgLoadTime;
 int avgTrackCycleTime;
 
-int motorSpeed = 150, dSpeed = 150; // Default speed (0-255)
-int thres[6] = { 0, 500, 555, 686, 432, 583 };
+int motorSpeed = 150; // Default speed (0-255)
+int thres[6] = { 0, 500, 555, 686, 400, 583 };
+int Cal = -350;
+int isTurning = 0;
 
 void setup() {
+
+  for(int i=1; i<6; i++) thres[i] += Cal;
   
   Serial.begin(115200); 
   Serial3.begin(9600);  // HM-10 Bluetooth (Pins 14, 15)
@@ -158,28 +162,28 @@ void loop() {
 
 
 
-void moveForward( int lSpeed = dSpeed, int rSpeed = dSpeed ) {
+void moveForward( int lSpeed, int rSpeed ) {
   digitalWrite(AIN1, HIGH); digitalWrite(AIN2, LOW);
   digitalWrite(BIN1, HIGH); digitalWrite(BIN2, LOW);
-  analogWrite(PWMA, lSpeed); analogWrite(PWMB, rSpeed);
+  analogWrite(PWMA, lSpeed ); analogWrite(PWMB, rSpeed );
 }
 
-void moveBackward( int lSpeed = dSpeed, int rSpeed = dSpeed ) {
+void moveBackward( int lSpeed , int rSpeed ) {
   digitalWrite(AIN1, LOW);  digitalWrite(AIN2, HIGH);
   digitalWrite(BIN1, LOW);  digitalWrite(BIN2, HIGH);
-  analogWrite(PWMA, lSpeed); analogWrite(PWMB, rSpeed);
+  analogWrite(PWMA, lSpeed ); analogWrite(PWMB, rSpeed );
 }
 
-void turnLeft( int lSpeed = dSpeed, int rSpeed = dSpeed ) {
+void turnLeft( int lSpeed , int rSpeed ) {
   digitalWrite(AIN1, LOW);  digitalWrite(AIN2, HIGH);
   digitalWrite(BIN1, HIGH); digitalWrite(BIN2, LOW);
-  analogWrite(PWMA, lSpeed); analogWrite(PWMB, rSpeed);
+  analogWrite(PWMA, lSpeed ); analogWrite(PWMB, rSpeed );
 }
 
-void turnRight( int lSpeed = dSpeed, int rSpeed = dSpeed ) {
+void turnRight( int lSpeed , int rSpeed ) {
   digitalWrite(AIN1, HIGH); digitalWrite(AIN2, LOW);
   digitalWrite(BIN1, LOW);  digitalWrite(BIN2, HIGH);
-  analogWrite(PWMA, lSpeed); analogWrite(PWMB, rSpeed);
+  analogWrite(PWMA, lSpeed ); analogWrite(PWMB, rSpeed );
 }
 
 void stopMotors() {
@@ -189,16 +193,6 @@ void stopMotors() {
 }
 
 
-void track( int v[] ){
-  for(int i=1; i<=6; i++) {
-    if( v[i] > thres[i] - 150 ) v[i] = 80;    //accelerate at black
-  }
-  int l = v[1] + v[2] +40;
-  int r = v[5] + v[4] +40;
-  while( l > 255 || r > 255){ l *= 0.9; r *= 0.9; }
-
-  moveForward( r , l );
-}
 
 void sendATCommand(const char* command) {
   Serial3.print(command);
