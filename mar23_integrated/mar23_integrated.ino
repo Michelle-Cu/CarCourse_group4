@@ -20,17 +20,16 @@ const int RST_PIN = 3;
 const int SS_PIN  = 2; 
 MFRC522 mfrc522(SS_PIN, RST_PIN);
 
-
 long baudRates[] = {9600, 19200, 38400, 57600, 115200, 4800, 2400, 1200, 230400};
 bool moduleReady = false;
 
-int time = 0;
-unsigned long startTime;
-int trackCyclePeriod = 10;
-unsigned long trackCycleCnt = 0;
+unsigned long lastLoopTime = 0;
+unsigned long lastIrTime = 0;
+unsigned long irCyclePeriod = 10;
+unsigned long irCycleCnt = 0;
 unsigned long loopCycleCnt = 0;
-int avgLoadTime;
-int avgTrackCycleTime;
+unsigned long avgLoopTime = 0;
+unsigned long avgIrCycleTime = 0;
 
 int motorSpeed = 150; // Default speed (0-255)
 int thres[6] = { 0, 500, 555, 686, 400, 583 };
@@ -51,7 +50,9 @@ void setup() {
   SPI.begin();
   mfrc522.PCD_Init();
 
-  startTime = millis();
+  lastLoopTime = millis();
+  lastIrTime = millis();
+  
 
   while (!Serial);
   Serial.println("Initializing HM-10...");
@@ -101,34 +102,25 @@ void setup() {
 
 
 void loop() {
-  if (Serial3.available()) {
-    Serial.println(Serial3.readString());
-  }
+  unsigned long currentMillis = millis();
+  unsigned long thisLoopTime = currentMillis - lastLoopTime;
+  lastLoopTime = currentMillis;
 
-  // 2. PC to Module: Read user input and truncate line endings
-  if (Serial.available()) {
-    static String inputBuffer = ""; 
-    
-    while (Serial.available()) {
-      char c = Serial.read();
-      
-      if (c == '\r' || c == '\n') {    // Check if the character is a line ending
-        if (inputBuffer.length() > 0) {
-          Serial3.print(inputBuffer);
-          // Debug: Show what was actually sent
-          Serial.print("\n[Sent to HM-10: ");
-          Serial.print(inputBuffer);
-          Serial.println("]");
-          
-          inputBuffer = ""; // Clear buffer for next command
-        }
-      } else {
-        inputBuffer += c; // Add character to buffer
-      }
+  loopCycleCnt++;
+  avgLoopTime = (avgLoopTime * (loopCycleCnt - 1) + thisLoopTime) / loopCycleCnt;
+
+  // 1. Process ESP32 commands (placeholder for future addons - e.g. move, turn)
+  if (Serial3.available()) {
+    String cmd = Serial3.readStringUntil('\n');
+    cmd.trim();
+    if (cmd.length() > 0) {
+      Serial.print("Received from ESP32: ");
+      Serial.println(cmd);
+      // Future: parse cmd and execute turns/movements here
     }
   }
 
-  // 3. RFID Scanning
+  // 2. RFID Scanning
   if (mfrc522.PICC_IsNewCardPresent() && mfrc522.PICC_ReadCardSerial()) {
     Serial.print("Card UID:");
     for (byte i = 0; i < mfrc522.uid.size; i++) {
@@ -139,25 +131,43 @@ void loop() {
     mfrc522.PICC_HaltA(); // Stop reading
   }
 
-  avgLoadTime = (avgLoadTime * loopCycleCnt + millis() - startTime) / (loopCycleCnt+1)
+  // 3. IR Reading and Tracking
+  if (currentMillis - lastIrTime >= irCyclePeriod) {
+    unsigned long thisIrTime = currentMillis - lastIrTime;
+    lastIrTime = currentMillis;
+    
+    irCycleCnt++;
+    avgIrCycleTime = (avgIrCycleTime * (irCycleCnt - 1) + thisIrTime) / irCycleCnt;
+    
+    int val[6]; // index 1 to 5
+    val[1] = analogRead(analog1);
+    val[2] = analogRead(analog2);
+    val[3] = analogRead(analog3);
+    val[4] = analogRead(analog4);
+    val[5] = analogRead(analog5);
 
-  int val[10];
-  // 4. uirReading and Tracking
-  if (millis() - startTime >= trackCyclePeriod) {
-    avgTrackCycleTime = (avgTrackCycleTime * trackCycleCnt + millis() - startTime) / (trackCycleCnt+1)
-    val[1] = analogRead( analog1 ), val[2] = analogRead( analog2 ), val[3] = analogRead( analog3 ), val[4] = analogRead( analog4 ), val[5] = analogRead( analog5 );
-    for(int i=1; i<=5; i++){
-      if( time % 1000 != 0) break;
-      Serial.print(val[i]); Serial.print("  "); if(i==5) Serial.print("\n");
+    // Uncomment and implement when ready:
+    // track(val); 
+
+    // Send data to ESP32 via Bluetooth (Serial3) every IR cycle
+    // Format: LoopCnt,LoopTime,AvgLoopTime,IrCnt,IrTime,AvgIrTime,IR1..5,Thresh1..5
+    Serial3.print(loopCycleCnt); Serial3.print(",");
+    Serial3.print(thisLoopTime); Serial3.print(",");
+    Serial3.print(avgLoopTime); Serial3.print(",");
+    Serial3.print(irCycleCnt); Serial3.print(",");
+    Serial3.print(thisIrTime); Serial3.print(",");
+    Serial3.print(avgIrCycleTime); Serial3.print(",");
+    
+    for (int i = 1; i <= 5; i++) {
+      Serial3.print(val[i]);
+      Serial3.print(",");
     }
-    track(val);
-    trackCycleCnt++;
-    startTime = millis();
+    for (int i = 1; i <= 5; i++) {
+      Serial3.print(val[i] > thres[i] ? "1" : "0");
+      if (i < 5) Serial3.print(",");
+    }
+    Serial3.println();
   }
-
-  loopCycleCnt++;
-  Serial.print("Loop: "); Serial.print(loopCycleCnt); Serial.print(" AvgLoadTime: "); Serial.println(avgLoadTime);
-
 }
 
 
