@@ -24,16 +24,23 @@ MFRC522 mfrc522(SS_PIN, RST_PIN);
 long baudRates[] = {9600, 19200, 38400, 57600, 115200, 4800, 2400, 1200, 230400};
 bool moduleReady = false;
 
-int time = 0;
+
 int motorSpeed = 150; // Default speed (0-255)
-int thres[6] = { 0, 500, 555, 686, 400, 583 };
-int Cal = -350;
+int thres[6] = { 0, 400, 555, 600, 400, 583 };
+int Cal = -300;
 int isTurning = 0;
+int t[1000], tp = 0;         //1 keep going,  2 turn left,  3 U-turn,  4 turn right
+unsigned long pMillis = 0, tMillis = 0;
 
 void setup() {
 
   for(int i=1; i<6; i++) thres[i] += Cal;
   
+  for(int i=0; i<1000; i++){
+    if( i%4 <= 1 ) t[i] = 2;
+    else t[i] = 4;
+  }
+
   Serial.begin(115200); 
   Serial3.begin(9600);  // HM-10 Bluetooth (Pins 14, 15)
 
@@ -122,9 +129,12 @@ void loop() {
 
   int val[10];
   val[1] = analogRead( analog1 ), val[2] = analogRead( analog2 ), val[3] = analogRead( analog3 ), val[4] = analogRead( analog4 ), val[5] = analogRead( analog5 );
-  for(int i=1; i<=5; i++){
-    if( time % 1000 != 0) break;
-    Serial.print(val[i]); Serial.print("  "); if(i==5) Serial.print("\n");
+  
+  if(  millis() - pMillis > 500 ){
+    for(int i=1; i<=5; i++){
+      Serial.print(val[i]); Serial.print("  "); if(i==5) Serial.print("\n");
+    }
+    pMillis = millis();
   }
 
   // 3. RFID Scanning
@@ -141,21 +151,31 @@ void loop() {
   int count = 0;
   for(int i=1; i<6; i++) {
     if( val[i] > thres[i]  ) {
-      val[i] = 80;    //accelerate at black
+      val[i] = 60;    //accelerate at black
       count++;
     }
+    else val[i] = 0;
   }
-  Serial.println(count);
+  //Serial.println(count);
 
-  if( count == 5 ) { isTurning = 1;}
-  if (isTurning == 1 && count == 0) isTurning = 2;
+  if( count == 5 ) { isTurning = 1; tMillis = millis(); }                        //reach node
+  if (isTurning == 1 && count == 0 && millis() - tMillis > 1000 ) isTurning = 2;           //past node, turn
 
   int l = val[1] + val[2] + 100;
   int r = val[5] + val[4] + 100;
-  while( l > 255 || r > 255){ l *= 0.9; r *= 0.9; }
+  while( l > 200 || r > 200){ l *= 0.5; r *= 0.5; }
   
-  if( isTurning == 2 && count <= 3 && (val[2] == 80 || val[3] == 80 || val[4] == 80)) isTurning = 0;
-  else if( isTurning == 2 ) turnLeft( 60, 60 );
+  if( isTurning == 2 && count <= 3 && (val[2] > 0 || val[3] > 0 || val[4] > 0 )) { 
+    isTurning = 0;  //found line, finished step
+    tp++;
+  }
+
+  else if( isTurning == 2 ) {
+    if( t[tp] == 1) moveForward( r, l );
+    else if( t[tp] == 2) turnLeft( 60, 60 );
+    else if( t[tp] == 3) ;
+    else if( t[tp] == 4) turnRight( 60, 60 );
+  }
   else moveForward( r , l );
     
 }
