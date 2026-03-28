@@ -107,7 +107,7 @@ void loop() {
   lastLoopTime = currentMillis;
 
   loopCycleCnt++;
-  avgLoopTime = (avgLoopTime * (loopCycleCnt - 1) + thisLoopTime) / loopCycleCnt;
+  // avgLoopTime = (avgLoopTime * (loopCycleCnt - 1) + thisLoopTime) / loopCycleCnt;
 
   // 1. Process ESP32 commands (placeholder for future addons - e.g. move, turn)
   if (Serial3.available()) {
@@ -137,7 +137,7 @@ void loop() {
     lastIrTime = currentMillis;
     
     irCycleCnt++;
-    avgIrCycleTime = (avgIrCycleTime * (irCycleCnt - 1) + thisIrTime) / irCycleCnt;
+    // avgIrCycleTime = (avgIrCycleTime * (irCycleCnt - 1) + thisIrTime) / irCycleCnt;
     
     int val[6]; // index 1 to 5
     val[1] = analogRead(analog1);
@@ -153,10 +153,10 @@ void loop() {
     // Format: LoopCnt,LoopTime,AvgLoopTime,IrCnt,IrTime,AvgIrTime,IR1..5,Thresh1..5
     Serial3.print(loopCycleCnt); Serial3.print(",");
     Serial3.print(thisLoopTime); Serial3.print(",");
-    Serial3.print(avgLoopTime); Serial3.print(",");
+    // Serial3.print(avgLoopTime); Serial3.print(",");
     Serial3.print(irCycleCnt); Serial3.print(",");
     Serial3.print(thisIrTime); Serial3.print(",");
-    Serial3.print(avgIrCycleTime); Serial3.print(",");
+    // Serial3.print(avgIrCycleTime); Serial3.print(",");
     
     for (int i = 1; i <= 5; i++) {
       Serial3.print(val[i]);

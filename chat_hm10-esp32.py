@@ -59,8 +59,8 @@ def main():
         csv_writer = csv.writer(f)
         # Write header matching the Arduino data format
         csv_writer.writerow([
-            'Timestamp', 'LoopCnt', 'LoopTime(ms)', 'AvgLoopTime(ms)', 
-            'IrCnt', 'IrTime(ms)', 'AvgIrTime(ms)', 
+            'Timestamp', 'LoopCnt', 'LoopTime(ms)', 
+            'IrCnt', 'IrTime(ms)', 
             'IR1', 'IR2', 'IR3', 'IR4', 'IR5', 
             'T1', 'T2', 'T3', 'T4', 'T5'
         ])
