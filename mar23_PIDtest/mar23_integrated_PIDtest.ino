@@ -15,6 +15,20 @@ const int BIN1 = 8;    // Direction B1
 const int BIN2 = 9;   // Direction B2
 const int PWMB = 11;    // Speed Motor B (Check if wired to Pin 5 or 4)
 
+// PID Constants - You will tune these!
+double Kp = 50.0; 
+double Kd = 0.0;
+double Ki = 0.0;
+int Tp = 100; // Base speed
+
+// Memory for PID
+double lastError = 0;
+double sumError = 0;
+
+// Weights for the sensors (w2 and w3 from your slide)
+double w2 = 1.0; 
+double w3 = 3.0;
+
 // RFID MFRC522 (Mega Hardware SPI)
 const int RST_PIN = 3; 
 const int SS_PIN  = 2; 
@@ -24,24 +38,16 @@ MFRC522 mfrc522(SS_PIN, RST_PIN);
 long baudRates[] = {9600, 19200, 38400, 57600, 115200, 4800, 2400, 1200, 230400};
 bool moduleReady = false;
 
-
+int time = 0;
 int motorSpeed = 150; // Default speed (0-255)
-int thres[6] = { 0, 400, 555, 600, 400, 583 };
-int Cal = -300;
+int thres[6] = { 0, 500, 555, 686, 400, 583 };
+int Cal = -350;
 int isTurning = 0;
-int t[1000], tp = 0;         //1 keep going,  2 turn left,  3 U-turn,  4 turn right
-unsigned long pMillis = 0, t1Millis = 0, t2Millis = 0;
-int l=100, r=100;
 
 void setup() {
 
   for(int i=1; i<6; i++) thres[i] += Cal;
   
-  for(int i=0; i<1000; i++){
-    if( i%2 == 1 ) t[i] = 2;
-    else t[i] = 1;
-  }
-
   Serial.begin(115200); 
   Serial3.begin(9600);  // HM-10 Bluetooth (Pins 14, 15)
 
@@ -72,6 +78,7 @@ void setup() {
       break; 
     } else {
       Serial3.end();
+      delay(100);
     }
   }
 
@@ -83,6 +90,7 @@ void setup() {
   // 3. Restore Factory Defaults
   Serial.println("Restoring factory defaults...");
   sendATCommand("AT+RENEW"); // Restores all setup values
+  delay(300);
 
   // 4. Set Custom Name via Macro
   Serial.print("Setting name to: ");
@@ -127,13 +135,10 @@ void loop() {
   }
 
   int val[10];
-  val[1] = digitalRead( analog1 ), val[2] = digitalRead( analog2 ), val[3] = digitalRead( analog3 ), val[4] = digitalRead( analog4 ), val[5] = digitalRead( analog5 );
-  
-  if(  millis() - pMillis > 500 ){
-    for(int i=1; i<=5; i++){
-      Serial.print(val[i]); Serial.print("  "); if(i==5) Serial.print("\n");
-    }
-    pMillis = millis();
+  val[1] = analogRead( analog1 ), val[2] = analogRead( analog2 ), val[3] = analogRead( analog3 ), val[4] = analogRead( analog4 ), val[5] = analogRead( analog5 );
+  for(int i=1; i<=5; i++){
+    if( time % 1000 != 0) break;
+    Serial.print(val[i]); Serial.print("  "); if(i==5) Serial.print("\n");
   }
 
   // 3. RFID Scanning
@@ -147,35 +152,27 @@ void loop() {
     mfrc522.PICC_HaltA(); // Stop reading
   }
 
-  int count = 0;
-  for(int i=1; i<6; i++) {
-    if( val[i] == HIGH  ) {
-      val[i] = 30;    //accelerate at black
-      count++;
-    }
-    else val[i] = 0;
-  }
-  Serial.print("count = ");Serial.println(count);
+  // int count = 0;
+  // for(int i=1; i<6; i++) {
+  //   if( val[i] > thres[i]  ) {
+  //     val[i] = 80;    //accelerate at black
+  //     count++;
+  //   }
+  // }
+  // Serial.println(count);
 
-  if( count == 5 && isTurning == 0 ) { isTurning = 1; t1Millis = millis(); }                        //reach node
-  if (isTurning == 1 && count <= 1 && millis() - t1Millis > 1200  ) { isTurning = 2; t2Millis = millis();          }//past node, turn
+  // if( count == 5 ) { isTurning = 1;}
+  // if (isTurning == 1 && count == 0) isTurning = 2;
 
-  int l = val[1] + val[2] + 100 - val[5] - 1.5*val[4] ;
-  int r = val[5] + val[4] + 100 - val[1] - 1.5*val[2];
-  while( l > 200 || r > 200){ l *= 0.5; r *= 0.5; }
+  int l = val[1] + val[2] + 100;
+  int r = val[5] + val[4] + 100;
+  while( l > 255 || r > 255){ l *= 0.9; r *= 0.9; }
   
-  if( isTurning == 2 && count <= 3 && (val[2] > 0 || val[3] > 0 || val[4] > 0 ) && millis() - t2Millis > 500) { 
-      isTurning = 0;  //found line, finished step
-      tp++;
-      moveForward( r , l );
-  }
-  else if( isTurning == 2 ) {
-    if( t[tp] == 1) moveForward( r, l );
-    else if( t[tp] == 2) turnLeft( 60, 60 );
-    else if( t[tp] == 3) ;
-    else if( t[tp] == 4) turnRight( 60, 60 );
-  }
-  else moveForward( r , l );
+  // if( isTurning == 2 && count <= 3 && (val[2] == 80 || val[3] == 80 || val[4] == 80)) isTurning = 0;
+  // else if( isTurning == 2 ) turnLeft( 60, 60 );
+  // else moveForward( r , l );
+
+  Tracking();
     
 }
 
@@ -229,3 +226,60 @@ bool waitForResponse(const char* expected, unsigned long timeout) {
   }
   return (response.indexOf(expected) != -1);
 }
+
+void MotorWriting(double vL, double vR) {
+  if (vR >= 0) {
+    digitalWrite(BIN1, HIGH); // Standard Forward direction
+    digitalWrite(BIN2, LOW);
+  } else {
+    digitalWrite(BIN1, LOW);  // Reverse direction
+    digitalWrite(BIN2, HIGH);
+    vR = -vR;                 // Convert negative to positive for analogWrite
+  }
+
+  if (vL >= 0) {
+    digitalWrite(AIN1, HIGH); // Standard Forward direction
+    digitalWrite(AIN2, LOW);
+  } else {
+    digitalWrite(AIN1, LOW);  // Reverse direction
+    digitalWrite(AIN2, HIGH);
+    vL = -vL;                 // Convert negative to positive for analogWrite
+  }
+
+  analogWrite(PWMB, constrain(vR, 0, 255)); 
+  analogWrite(PWMA, constrain(vL, 0, 255));
+}
+
+void Tracking() {
+  int l3 = analogRead(analog1);
+  int l2 = analogRead(analog2);
+  int m  = analogRead(analog3);
+  int r2 = analogRead(analog4);
+  int r3 = analogRead(analog5);
+
+  double numerator = (l3 * -w3) + (l2 * -w2) + (m * 0) + (r2 * w2) + (r3 * w3);
+  double denominator = l3 + l2 + m + r2 + r3;
+  // Avoid division by zero if robot is lifted or off-track
+  if (denominator == 0) denominator = 0.0001; 
+  
+  double error = numerator / denominator;
+
+  double dError = error - lastError; // Derivative: Change in error
+  sumError += error;                 // Integral: Accumulated error
+  
+  // Constrain sumError to prevent "Integral Windup"
+  sumError = constrain(sumError, -1000, 1000);
+
+  double powerCorrection = (Kp * error) + (Kd * dError) + (Ki * sumError);
+
+  int vR = Tp - powerCorrection;
+  int vL = Tp + powerCorrection;
+
+  vR = constrain(vR, -255, 255);
+  vL = constrain(vL, -255, 255);
+
+  MotorWriting(vL, vR);
+
+  lastError = error;
+}
+
