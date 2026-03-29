@@ -4,28 +4,65 @@ import sys
 import threading
 import csv
 import datetime
+import os
 
 PORT = 'COM9'
 EXPECTED_NAME = 'HM10-10'
 
+# Globals for average calculations
+avgLoopTime = 0.0
+avgIrCycleTime = 0.0
+
 def background_listener(bridge, csv_writer, csv_file):
+    global avgLoopTime, avgIrCycleTime
     while True:
-        msg = bridge.listen()
-        if msg:
+        messages = bridge.listen()
+        for msg in messages:
             msg = msg.strip()
+            if not msg:
+                continue
+                
             timestamp = datetime.datetime.now().strftime('%H:%M:%S.%f')[:-3]
             
             # Print received message
             print(f"[{timestamp}] HM10: {msg}")
             
-            # Try to write to CSV if it looks like our expected data format
+            # Data format from Arduino: 
+            # loopCycleCnt,thisLoopTime,irCycleCnt,thisIrTime,IR1..5,Thresh1..5 (14 values)
             parts = msg.split(',')
-            if len(parts) >= 16:  # LoopCnt,LoopTime,AvgLoopTime,IrCnt,IrTime,AvgIrTime,IR1..5,Thresh1..5
+            if len(parts) == 14:
                 try:
-                    csv_writer.writerow([timestamp] + parts)
+                    loopCnt = int(parts[0])
+                    thisLoopTime = int(parts[1])
+                    irCnt = int(parts[2])
+                    thisIrTime = int(parts[3])
+                    
+                    # Calculate averages in Python
+                    if loopCnt > 0:
+                        avgLoopTime = (avgLoopTime * (loopCnt - 1) + thisLoopTime) / loopCnt
+                    if irCnt > 0:
+                        avgIrCycleTime = (avgIrCycleTime * (irCnt - 1) + thisIrTime) / irCnt
+                    
+                    # Construct row for CSV:
+                    # Timestamp, LoopCnt, LoopTime, AvgLoopTime, IrCnt, IrTime, AvgIrTime, IR1..5, T1..5
+                    row = [
+                        timestamp, 
+                        loopCnt, 
+                        thisLoopTime, 
+                        f"{avgLoopTime:.2f}",
+                        irCnt, 
+                        thisIrTime, 
+                        f"{avgIrCycleTime:.2f}"
+                    ] + parts[4:]
+                    
+                    csv_writer.writerow(row)
                     csv_file.flush()
-                except Exception as e:
-                    print(f"Error writing to CSV: {e}")
+                except (ValueError, IndexError) as e:
+                    print(f"Error parsing data: {e}")
+            elif len(parts) > 0:
+                # If it's not the main data packet, still log it if possible or just print
+                pass
+
         time.sleep(0.01) # Poll slightly faster to catch all cycles
 
 def main():
@@ -53,14 +90,18 @@ def main():
     print(f"✨ Ready! Connected to {EXPECTED_NAME}")
     
     # 3. Setup CSV Logging
-    filename = f"robot_data_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+    data_dir = "data"
+    if not os.path.exists(data_dir):
+        os.makedirs(data_dir)
+        
+    filename = os.path.join(data_dir, f"robot_data_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.csv")
     
     with open(filename, mode='w', newline='') as f:
         csv_writer = csv.writer(f)
-        # Write header matching the Arduino data format
+        # Write header matching the NEW data format
         csv_writer.writerow([
-            'Timestamp', 'LoopCnt', 'LoopTime(ms)', 
-            'IrCnt', 'IrTime(ms)', 
+            'Timestamp', 'LoopCnt', 'LoopTime(ms)', 'AvgLoopTime(ms)',
+            'IrCnt', 'IrTime(ms)', 'AvgIrTime(ms)',
             'IR1', 'IR2', 'IR3', 'IR4', 'IR5', 
             'T1', 'T2', 'T3', 'T4', 'T5'
         ])
