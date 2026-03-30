@@ -6,15 +6,17 @@ import csv
 import datetime
 import os
 
-PORT = 'COM9'
+PORT = 'COM8'
 EXPECTED_NAME = 'HM10-10'
 
 # Globals for average calculations
 avgLoopTime = 0.0
 avgIrCycleTime = 0.0
+loopSamples = 0
+irSamples = 0
 
 def background_listener(bridge, csv_writer, csv_file):
-    global avgLoopTime, avgIrCycleTime
+    global avgLoopTime, avgIrCycleTime, loopSamples, irSamples
     while True:
         messages = bridge.listen()
         for msg in messages:
@@ -24,11 +26,10 @@ def background_listener(bridge, csv_writer, csv_file):
                 
             timestamp = datetime.datetime.now().strftime('%H:%M:%S.%f')[:-3]
             
-            # Print received message
+            # Print received message for monitoring
             print(f"[{timestamp}] HM10: {msg}")
             
-            # Data format from Arduino: 
-            # loopCycleCnt,thisLoopTime,irCycleCnt,thisIrTime,IR1..5,Thresh1..5 (14 values)
+            # Try to log as data if it matches the 14-part format
             parts = msg.split(',')
             if len(parts) == 14:
                 try:
@@ -37,14 +38,13 @@ def background_listener(bridge, csv_writer, csv_file):
                     irCnt = int(parts[2])
                     thisIrTime = int(parts[3])
                     
-                    # Calculate averages in Python
-                    if loopCnt > 0:
-                        avgLoopTime = (avgLoopTime * (loopCnt - 1) + thisLoopTime) / loopCnt
-                    if irCnt > 0:
-                        avgIrCycleTime = (avgIrCycleTime * (irCnt - 1) + thisIrTime) / irCnt
+                    # Calculate averages based on session samples
+                    loopSamples += 1
+                    avgLoopTime = (avgLoopTime * (loopSamples - 1) + thisLoopTime) / loopSamples
                     
-                    # Construct row for CSV:
-                    # Timestamp, LoopCnt, LoopTime, AvgLoopTime, IrCnt, IrTime, AvgIrTime, IR1..5, T1..5
+                    irSamples += 1
+                    avgIrCycleTime = (avgIrCycleTime * (irSamples - 1) + thisIrTime) / irSamples
+                    
                     row = [
                         timestamp, 
                         loopCnt, 
@@ -57,13 +57,10 @@ def background_listener(bridge, csv_writer, csv_file):
                     
                     csv_writer.writerow(row)
                     csv_file.flush()
-                except (ValueError, IndexError) as e:
-                    print(f"Error parsing data: {e}")
-            elif len(parts) > 0:
-                # If it's not the main data packet, still log it if possible or just print
-                pass
+                except (ValueError, IndexError):
+                    pass 
 
-        time.sleep(0.01) # Poll slightly faster to catch all cycles
+        time.sleep(0.05)
 
 def main():
     bridge = HM10ESP32Bridge(port=PORT)
@@ -82,7 +79,15 @@ def main():
             sys.exit(1)
 
     # 2. Connection Check
+    print("Verifying connection...")
+    time.sleep(2) # Give it a moment to pair
     status = bridge.get_status()
+    if status != "CONNECTED":
+        # One retry
+        print(f"ESP32 is {status}, retrying...")
+        time.sleep(3)
+        status = bridge.get_status()
+        
     if status != "CONNECTED":
         print(f"⚠️ ESP32 is {status}. Please ensure HM-10 is advertising. Exiting.")
         sys.exit(0)
@@ -96,9 +101,11 @@ def main():
         
     filename = os.path.join(data_dir, f"robot_data_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.csv")
     
+    # Flush buffers to ensure we start in sync
+    bridge.flush()
+    
     with open(filename, mode='w', newline='') as f:
         csv_writer = csv.writer(f)
-        # Write header matching the NEW data format
         csv_writer.writerow([
             'Timestamp', 'LoopCnt', 'LoopTime(ms)', 'AvgLoopTime(ms)',
             'IrCnt', 'IrTime(ms)', 'AvgIrTime(ms)',
@@ -115,15 +122,11 @@ def main():
         )
         listener_thread.start()
 
-        # Main loop - ready for future commands to be sent to ESP32
-        print("Type 'exit' to quit. You can also type commands to send to the Arduino (e.g., 'TURN_LEFT').")
+        # Main loop - Just wait and keep the script alive
+        print("Data logger is running. Press Ctrl+C to stop.")
         try:
             while True:
-                user_msg = input()
-                if user_msg.lower() in ['exit', 'quit']: 
-                    break
-                if user_msg: 
-                    bridge.send(user_msg)
+                time.sleep(1)
         except KeyboardInterrupt:
             pass
             

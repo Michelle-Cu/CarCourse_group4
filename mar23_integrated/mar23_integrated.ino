@@ -39,13 +39,9 @@ int moveSq[8] = {2, 3, 0, 3, 1, 3, 0, 3}; // 0: forward, 1: left, 2: right, 3: u
 int sqIdx = -1;
 
 void setup() {
-
-  // for(int i=1; i<6; i++) thres[i] += Cal;
-  
   Serial.begin(115200); 
-  Serial3.begin(115200);  // HM-10 Bluetooth (Higher baud rate)
-
-  pinMode(PWMA, OUTPUT); pinMode(AIN1, OUTPUT); pinMode(AIN2, OUTPUT);               //Motor
+  
+  pinMode(PWMA, OUTPUT); pinMode(AIN1, OUTPUT); pinMode(AIN2, OUTPUT);
   pinMode(PWMB, OUTPUT); pinMode(BIN1, OUTPUT); pinMode(BIN2, OUTPUT);
   pinMode(analog1, INPUT);pinMode(analog2, INPUT);pinMode(analog3, INPUT);pinMode(analog4, INPUT);pinMode(analog5, INPUT);
 
@@ -54,59 +50,67 @@ void setup() {
 
   lastLoopTime = millis();
   lastIrTime = millis();
-  
 
   while (!Serial);
-  Serial.println("Initializing HM-10...");
+  Serial.println("\n--- HM-10 Initialization (9600 Baud) ---");
 
-  // 1. Automatic Baud Rate Detection
+  // 1. Find Current Baud Rate
+  int currentBaudIdx = -1;
   for (int i = 0; i < 9; i++) {
-    Serial.print("Testing baud rate: ");
-    Serial.println(baudRates[i]);
+    Serial.print("Probing "); Serial.print(baudRates[i]); Serial.print("... ");
     Serial3.begin(baudRates[i]);
-    Serial3.setTimeout(100);
-    delay(100);
-
-    // 2. Force Disconnection, Sending "AT" while connected forces the module to disconnect [2].
-    Serial3.print("AT"); 
-    
-    if (waitForResponse("OK", 800)) {
-      Serial.println("HM-10 detected and ready.");
-      moduleReady = true;
-      break; 
-    } else {
-      Serial3.end();
-      delay(100);
+    delay(200);
+    Serial3.print("AT");
+    if (waitForResponse("OK", 500)) {
+      Serial.println("DETECTED!");
+      currentBaudIdx = i;
+      break;
     }
+    Serial3.end();
   }
 
-  if (!moduleReady) {
-    Serial.println("Failed to detect HM-10. Check 3.3V VCC and wiring.");
+  if (currentBaudIdx == -1) {
+    Serial.println("CRITICAL ERROR: HM-10 not responding.");
     return;
   }
 
-  // 3. Restore Factory Defaults
-  Serial.println("Restoring factory defaults...");
-  sendATCommand("AT+RENEW"); // Restores all setup values
-  delay(300);
-
-  // 4. Set Baud Rate to 115200 (AT+BAUD4)
-  // Note: Different HM-10 clones use different indices. 4 is usually 115200.
-  Serial.println("Setting HM-10 baud rate to 115200...");
-  sendATCommand("AT+BAUD4"); 
-  Serial3.begin(115200);
+  // 2. Factory Reset to known state
+  Serial.print("Restoring Defaults (AT+RENEW)... ");
+  Serial3.print("AT+RENEW");
+  delay(600);
+  
+  // 3. Re-Sync at 9600
+  Serial3.begin(9600);
   delay(200);
+  Serial.print("Verifying 9600 sync... ");
+  Serial3.print("AT");
+  if (waitForResponse("OK", 500)) Serial.println("OK.");
+  else Serial.println("Proceeding...");
 
-  // 5. Set Custom Name via Macro
-  Serial.print("Setting name to: ");
-  Serial.println(CUSTOM_NAME);
+  // 4. Configure Pairing Parameters AT 9600
+  Serial.print("Setting Name to "); Serial.print(CUSTOM_NAME); Serial.print("... ");
   String nameCmd = "AT+NAME" + String(CUSTOM_NAME);
-  sendATCommand(nameCmd.c_str()); // Max length is 12
- 
-  sendATCommand("AT+NOTI1"); 
-  sendATCommand("AT+ADDR?");
-  sendATCommand("AT+RESET");
-  Serial.println("Initialization Complete.");
+  Serial3.print(nameCmd);
+  waitForResponse("OK", 1000);
+
+  Serial.print("Setting Mode to Peripheral... ");
+  Serial3.print("AT+ROLE0"); 
+  waitForResponse("OK", 500);
+
+  Serial.print("Enabling Immediate Advertising... ");
+  Serial3.print("AT+IMME0"); 
+  waitForResponse("OK", 500);
+
+  Serial.print("Enabling Connect Notification... ");
+  Serial3.print("AT+NOTI1"); 
+  waitForResponse("OK", 500);
+
+  Serial.print("Finalizing (AT+RESET)... ");
+  Serial3.print("AT+RESET");
+  waitForResponse("OK", 1000);
+  
+  delay(1000); 
+  Serial.println("--- HM-10 Ready at 9600 Baud ---\n");
 }
 
 
@@ -118,14 +122,13 @@ void loop() {
   loopCycleCnt++;
   // avgLoopTime = (avgLoopTime * (loopCycleCnt - 1) + thisLoopTime) / loopCycleCnt;
 
-  // 1. Process ESP32 commands (placeholder for future addons - e.g. move, turn)
+  // 1. Process ESP32 commands
   if (Serial3.available()) {
     String cmd = Serial3.readStringUntil('\n');
     cmd.trim();
     if (cmd.length() > 0) {
       Serial.print("Received from ESP32: ");
       Serial.println(cmd);
-      // Future: parse cmd and execute turns/movements here
     }
   }
 
@@ -216,7 +219,10 @@ void startTurn(int* dval, int turnType) {
   if (turnType == 0) {track(dval); turning = 0; return;}
   else if (turnType == 1) leftTurn(90);
   else if (turnType == 2) rightTurn(90);
-  else if (turnType == 3) leftTurn(90); // U-turn (left)
+  else if (turnType == 3) {
+    moveForward(150, 150); delay(100); // Move forward a bit before U-turn
+    leftTurn(90); // U-turn (left)
+  }
   turning = 3; turnProgress = 0;
 }
 
@@ -226,7 +232,7 @@ void endTurn(int* dval, int turnType) {
     if (turnProgress == 0 && (dval[3] == 1 || dval[4] == 1)) { // Passed middle sensor
       turnProgress = 1; 
     }
-    else if (turnProgress == 1 && (dval[2] == 1 || dval[3] == 1)) { // Completed left turn
+    else if (turnProgress == 1 && (dval[1] == 1 || dval[2] == 1)) { // Completed left turn
       turning = 0; // Start tracking again
       track(dval);
     }
@@ -235,7 +241,7 @@ void endTurn(int* dval, int turnType) {
     if (turnProgress == 0 && (dval[2] == 1 || dval[3] == 1)) { // Passed middle sensor
       turnProgress = 1; 
     }
-    else if (turnProgress == 1 && (dval[3] == 1 || dval[4] == 1)) { // Completed right turn  
+    else if (turnProgress == 1 && (dval[4] == 1 || dval[5] == 1)) { // Completed right turn  
       turning = 0; // Start tracking again
       track(dval);
     }
@@ -257,7 +263,7 @@ void endTurn(int* dval, int turnType) {
     if (turnProgress == 0 && (dval[3] == 1 || dval[4] == 1)) { // Passed middle sensor
       turnProgress = 1; 
     }
-    else if (turnProgress == 1 && (dval[2] == 1 || dval[3] == 1)) { // Completed left turn
+    else if (turnProgress == 1 && (dval[1] == 1 || dval[2] == 1)) { // Completed left turn
       turning = 0; // Start tracking again
       track(dval);
     }
