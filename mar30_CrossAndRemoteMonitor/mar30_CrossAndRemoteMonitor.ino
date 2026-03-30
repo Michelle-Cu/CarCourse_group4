@@ -23,20 +23,27 @@ MFRC522 mfrc522(SS_PIN, RST_PIN);
 long baudRates[] = {9600, 19200, 38400, 57600, 115200, 4800, 2400, 1200, 230400};
 bool moduleReady = false;
 
+// Timers
 unsigned long lastLoopTime = 0;
 unsigned long lastIrTime = 0;
-unsigned long irCyclePeriod = 10;
+unsigned long lastBtTime = 0;
+
+const unsigned long irCyclePeriod = 20; // Fast tracking (20ms)
+const unsigned long btCyclePeriod = 100; // Stable BT reporting (100ms)
+
 unsigned long irCycleCnt = 0;
 unsigned long loopCycleCnt = 0;
-unsigned long avgLoopTime = 0;
-unsigned long avgIrCycleTime = 0;
+unsigned long btCycleCnt = 0;
 
-int motorSpeed = 150; // Default speed (0-255)
-// int thres[6] = { 0, 500, 555, 686, 400, 583 };
-// int Cal = -350;
+int motorSpeed = 150; 
 int turning = 0, turnProgress = 0;
-int moveSq[8] = {2, 3, 0, 3, 1, 3, 0, 3}; // 0: forward, 1: left, 2: right, 3: uturn, 4: stop
+int moveSq[8] = {2, 3, 0, 3, 1, 3, 0, 3}; 
 int sqIdx = -1;
+
+// Global state for BT reporting
+int global_dval[6] = {0,0,0,0,0,0};
+unsigned long lastThisLoopTime = 0;
+unsigned long lastThisIrTime = 0;
 
 void setup() {
   Serial.begin(115200); 
@@ -50,9 +57,10 @@ void setup() {
 
   lastLoopTime = millis();
   lastIrTime = millis();
+  lastBtTime = millis();
 
   while (!Serial);
-  Serial.println("\n--- HM-10 Initialization (9600 Baud) ---");
+  Serial.println("\n--- HM-10 Robust Initialization ---");
 
   // 1. Find Current Baud Rate
   int currentBaudIdx = -1;
@@ -116,18 +124,17 @@ void setup() {
 
 void loop() {
   unsigned long currentMillis = millis();
-  unsigned long thisLoopTime = currentMillis - lastLoopTime;
+  lastThisLoopTime = currentMillis - lastLoopTime;
   lastLoopTime = currentMillis;
 
   loopCycleCnt++;
-  // avgLoopTime = (avgLoopTime * (loopCycleCnt - 1) + thisLoopTime) / loopCycleCnt;
 
   // 1. Process ESP32 commands
   if (Serial3.available()) {
     String cmd = Serial3.readStringUntil('\n');
     cmd.trim();
     if (cmd.length() > 0) {
-      Serial.print("Received from ESP32: ");
+      Serial.print("Remote Command: ");
       Serial.println(cmd);
     }
   }
@@ -143,65 +150,52 @@ void loop() {
     mfrc522.PICC_HaltA(); // Stop reading
   }
 
-  // 3. IR Reading and Tracking
+  // 3. High-Speed IR Reading and Tracking (20ms)
   if (currentMillis - lastIrTime >= irCyclePeriod) {
-    unsigned long thisIrTime = currentMillis - lastIrTime;
+    lastThisIrTime = currentMillis - lastIrTime;
     lastIrTime = currentMillis;
-    
     irCycleCnt++;
-    // avgIrCycleTime = (avgIrCycleTime * (irCycleCnt - 1) + thisIrTime) / irCycleCnt;
     
-    // int aval[6]; // index 1 to 5
-    // aval[1] = analogRead(analog1);
-    // aval[2] = analogRead(analog2);
-    // aval[3] = analogRead(analog3);
-    // aval[4] = analogRead(analog4);
-    // aval[5] = analogRead(analog5);
-
-    int dval[6]; // index 1 to 5
-    dval[1] = digitalRead(analog1);
-    dval[2] = digitalRead(analog2);
-    dval[3] = digitalRead(analog3);
-    dval[4] = digitalRead(analog4);
-    dval[5] = digitalRead(analog5);
+    global_dval[1] = digitalRead(analog1);
+    global_dval[2] = digitalRead(analog2);
+    global_dval[3] = digitalRead(analog3);
+    global_dval[4] = digitalRead(analog4);
+    global_dval[5] = digitalRead(analog5);
 
     int cnt = 0;
     for (int i = 1; i <= 5; i++) {
-      if (dval[i]) cnt++;
+      if (global_dval[i]) cnt++;
     }
 
     if (cnt >= 3 && turning == 0) {
       turning = 1;
-      sqIdx += 1;
-      if (sqIdx >= 8) {
-        sqIdx = 0;
-        stopMotors();
-      }
+      sqIdx = (sqIdx + 1) % 8;
     }
     if (turning == 1 && cnt <= 2) turning = 2;
 
-    // Uncomment and implement when ready:
-    if (turning == 0) track(dval);
-    else if (turning == 1) moveForward(motorSpeed, motorSpeed); // on black node
-    else if (turning == 2) startTurn(dval, moveSq[sqIdx]);
-    else if (turning == 3) endTurn(dval, moveSq[sqIdx]);
+    if (turning == 0) track(global_dval);
+    else if (turning == 1) moveForward(motorSpeed, motorSpeed);
+    else if (turning == 2) startTurn(global_dval, moveSq[sqIdx]);
+    else if (turning == 3) endTurn(global_dval, moveSq[sqIdx]);
+  }
 
-    // Send data to ESP32 via Bluetooth (Serial3) every IR cycle
-    // Format: LoopCnt,LoopTime,AvgLoopTime,IrCnt,IrTime,AvgIrTime,IR1..5,Thresh1..5
+  // 4. Decoupled Bluetooth Reporting (100ms)
+  if (currentMillis - lastBtTime >= btCyclePeriod) {
+    lastBtTime = currentMillis;
+    btCycleCnt++;
+
+    // Format: loopCycleCnt, thisLoopTime, irCycleCnt, thisIrTime, IR1..5, T1..5 (Total 14 values)
     Serial3.print(loopCycleCnt); Serial3.print(",");
-    Serial3.print(thisLoopTime); Serial3.print(",");
-    // Serial3.print(avgLoopTime); Serial3.print(",");
+    Serial3.print(lastThisLoopTime); Serial3.print(",");
     Serial3.print(irCycleCnt); Serial3.print(",");
-    Serial3.print(thisIrTime); Serial3.print(",");
-    // Serial3.print(avgIrCycleTime); Serial3.print(",");
+    Serial3.print(lastThisIrTime); Serial3.print(",");
     
     for (int i = 1; i <= 5; i++) {
-      Serial3.print(dval[i]);
+      Serial3.print(global_dval[i]);
       Serial3.print(",");
     }
     for (int i = 1; i <= 5; i++) {
-      // Serial3.print(val[i] > thres[i] ? "1" : "0");
-      Serial3.print("1");
+      Serial3.print("1"); // Placeholder for thresholds
       if (i < 5) Serial3.print(",");
     }
     Serial3.println();

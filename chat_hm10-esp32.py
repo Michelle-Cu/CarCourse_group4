@@ -122,11 +122,16 @@ def main():
         )
         listener_thread.start()
 
-        # Main loop - Just wait and keep the script alive
-        print("Data logger is running. Press Ctrl+C to stop.")
+        # Main loop - Remote Monitor Command Interface
+        print("Data logger is running. Type commands to send to the robot (e.g., 'STOP', 'SPEED_100').")
+        print("Type 'exit' or press Ctrl+C to stop.")
         try:
             while True:
-                time.sleep(1)
+                user_msg = input()
+                if user_msg.lower() in ['exit', 'quit']: 
+                    break
+                if user_msg: 
+                    bridge.send(user_msg)
         except KeyboardInterrupt:
             pass
             
