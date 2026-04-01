@@ -20,7 +20,6 @@ const int RST_PIN = 3;
 const int SS_PIN  = 2; 
 MFRC522 mfrc522(SS_PIN, RST_PIN);
 
-
 long baudRates[] = {9600, 19200, 38400, 57600, 115200, 4800, 2400, 1200, 230400};
 bool moduleReady = false;
 
@@ -43,22 +42,24 @@ void setup() {
   }
 
   Serial.begin(115200); 
-  Serial3.begin(9600);  // HM-10 Bluetooth (Pins 14, 15)
-
-  pinMode(PWMA, OUTPUT); pinMode(AIN1, OUTPUT); pinMode(AIN2, OUTPUT);               //Motor
+  
+  pinMode(PWMA, OUTPUT); pinMode(AIN1, OUTPUT); pinMode(AIN2, OUTPUT);
   pinMode(PWMB, OUTPUT); pinMode(BIN1, OUTPUT); pinMode(BIN2, OUTPUT);
   pinMode(analog1, INPUT);pinMode(analog2, INPUT);pinMode(analog3, INPUT);pinMode(analog4, INPUT);pinMode(analog5, INPUT);
 
   SPI.begin();
   mfrc522.PCD_Init();
 
-  while (!Serial);
-  Serial.println("Initializing HM-10...");
+  lastLoopTime = millis();
+  lastIrTime = millis();
 
-  // 1. Automatic Baud Rate Detection
+  while (!Serial);
+  Serial.println("\n--- HM-10 Initialization (9600 Baud) ---");
+
+  // 1. Find Current Baud Rate
+  int currentBaudIdx = -1;
   for (int i = 0; i < 9; i++) {
-    Serial.print("Testing baud rate: ");
-    Serial.println(baudRates[i]);
+    Serial.print("Probing "); Serial.print(baudRates[i]); Serial.print("... ");
     Serial3.begin(baudRates[i]);
     Serial3.setTimeout(100);
     delay(100);
@@ -73,10 +74,11 @@ void setup() {
     } else {
       Serial3.end();
     }
+    Serial3.end();
   }
 
-  if (!moduleReady) {
-    Serial.println("Failed to detect HM-10. Check 3.3V VCC and wiring.");
+  if (currentBaudIdx == -1) {
+    Serial.println("CRITICAL ERROR: HM-10 not responding.");
     return;
   }
 
@@ -88,17 +90,39 @@ void setup() {
   Serial.print("Setting name to: ");
   Serial.println(CUSTOM_NAME);
   String nameCmd = "AT+NAME" + String(CUSTOM_NAME);
-  sendATCommand(nameCmd.c_str()); // Max length is 12
- 
-  sendATCommand("AT+NOTI1"); 
-  sendATCommand("AT+ADDR?");
-  sendATCommand("AT+RESET");
-  Serial.println("Initialization Complete.");
+  Serial3.print(nameCmd);
+  waitForResponse("OK", 1000);
+
+  Serial.print("Setting Mode to Peripheral... ");
+  Serial3.print("AT+ROLE0"); 
+  waitForResponse("OK", 500);
+
+  Serial.print("Enabling Immediate Advertising... ");
+  Serial3.print("AT+IMME0"); 
+  waitForResponse("OK", 500);
+
+  Serial.print("Enabling Connect Notification... ");
+  Serial3.print("AT+NOTI1"); 
+  waitForResponse("OK", 500);
+
+  Serial.print("Finalizing (AT+RESET)... ");
+  Serial3.print("AT+RESET");
+  waitForResponse("OK", 1000);
+  
+  delay(1000); 
+  Serial.println("--- HM-10 Ready at 9600 Baud ---\n");
 }
 
 
 void loop() {
+  unsigned long currentMillis = millis();
+  unsigned long thisLoopTime = currentMillis - lastLoopTime;
+  lastLoopTime = currentMillis;
 
+  loopCycleCnt++;
+  // avgLoopTime = (avgLoopTime * (loopCycleCnt - 1) + thisLoopTime) / loopCycleCnt;
+
+  // 1. Process ESP32 commands
   if (Serial3.available()) {
     Serial.println(Serial3.readString());
   }
@@ -136,7 +160,7 @@ void loop() {
     pMillis = millis();
   }
 
-  // 3. RFID Scanning
+  // 2. RFID Scanning
   if (mfrc522.PICC_IsNewCardPresent() && mfrc522.PICC_ReadCardSerial()) {
     Serial.print("Card UID:");
     for (byte i = 0; i < mfrc522.uid.size; i++) {
@@ -193,25 +217,21 @@ void moveBackward( int lSpeed , int rSpeed ) {
   analogWrite(PWMA, lSpeed ); analogWrite(PWMB, rSpeed );
 }
 
-void turnLeft( int lSpeed , int rSpeed ) {
-  digitalWrite(AIN1, LOW);  digitalWrite(AIN2, HIGH);
-  digitalWrite(BIN1, HIGH); digitalWrite(BIN2, LOW);
-  analogWrite(PWMA, lSpeed ); analogWrite(PWMB, rSpeed );
+void moveForward(int lSpeed, int rSpeed) {
+  Motor(lSpeed, rSpeed);
 }
 
-void turnRight( int lSpeed , int rSpeed ) {
-  digitalWrite(AIN1, HIGH); digitalWrite(AIN2, LOW);
-  digitalWrite(BIN1, LOW);  digitalWrite(BIN2, HIGH);
-  analogWrite(PWMA, lSpeed ); analogWrite(PWMB, rSpeed );
+void leftTurn(int speed) {
+  Motor(-speed, speed);
+}
+
+void rightTurn(int speed) {
+  Motor(speed, -speed);
 }
 
 void stopMotors() {
-  digitalWrite(AIN1, LOW); digitalWrite(AIN2, LOW);
-  digitalWrite(BIN1, LOW); digitalWrite(BIN2, LOW);
-  analogWrite(PWMA, 0);    analogWrite(PWMB, 0);
+  Motor(0, 0);
 }
-
-
 
 void sendATCommand(const char* command) {
   Serial3.print(command);
