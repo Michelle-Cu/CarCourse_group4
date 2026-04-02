@@ -29,7 +29,7 @@ bool moduleReady = false;
 double Kp = 50.0; 
 double Kd = 0.0;
 double Ki = 0.0;
-int Tp = 100; // Base speed
+int Tp = 150; // Base speed
 
 // Memory for PID
 double lastError = 0;
@@ -39,18 +39,16 @@ double sumError = 0;
 double w2 = 1.0; 
 double w3 = 3.0;
 
-int motorSpeed = 150; // Default speed (0-255)
 
-int Act = 1, d[2000], dp=0;
-unsigned long step[5][5];
-int tp = 1, todo[1000];         //1 keep going,  2 turn left,  3 U-turn,  4 turn right
-unsigned long pMillis = 0, t1Millis = 0, t2Millis = 0;
-
+int Act = 1, tp = 1, todo[1000];     //1 keep going,  2 turn left,  3 U-turn,  4 turn right
+unsigned long step[5][5], pMillis = 0;
 
 void setup() {
   
   for(int i=1; i<1000; ){
-    todo[i++] = 1; todo[i++] = 3; todo[i++] = 2; todo[i++] = 3; todo[i++] = 4; todo[i++] = 3;
+    //todo[i++] = 2;
+    todo[i++] = 1; todo[i++] = 3; 
+    todo[i++] = 2; todo[i++] = 3; todo[i++] = 4; todo[i++] = 3;
   }
 
   Serial.begin(115200); 
@@ -106,7 +104,7 @@ void setup() {
   sendATCommand("AT+RESET");
   Serial.println("Initialization Complete.");
   */
-  delay(3000);
+  delay(5000);
 }
 
 
@@ -144,7 +142,7 @@ void loop() {
     }
     pMillis = millis();
   }
-/*
+
   // 3. RFID Scanning
   if (mfrc522.PICC_IsNewCardPresent() && mfrc522.PICC_ReadCardSerial()) {
     Serial.print("Card UID:");
@@ -154,17 +152,14 @@ void loop() {
     }
     Serial.println();
     mfrc522.PICC_HaltA(); // Stop reading
+    //stopMotors();delay(1000);
   }
-*/
-  int count = 0;
-  for(int i=1; i<6; i++) {
-    if( val[i] == HIGH  ) {  count++; }
-  }
-  
-  int l = 150+ 40*( 1.5*val[1] + val[2]  - val[5] - 1.5*val[4] );
-  int r = 150+ 40*( 1.5*val[4] + val[5]  - val[1] - 1.5*val[2] );
 
-  //Serial.print("count = ");Serial.println(count);
+  int count = 0;
+  for(int i=1; i<6; i++) if( val[i] == HIGH  ) count++; 
+  
+  //int l = 150+ 40*( 1.5*val[1] + val[2]  - val[5] - 1.5*val[4] );
+  //int r = 150+ 40*( 1.5*val[4] + val[5]  - val[1] - 1.5*val[2] );
 
   if( todo[tp] == 2 && count >=4 && Act == 1 ) { Act = 21; step[2][1] = millis(); }                        //reach node
   else if ( Act == 21 && count <= 3 && millis() - step[2][1] > 500 ) { Act = 22; step[2][2] = millis();          }//past node, turn
@@ -173,33 +168,35 @@ void loop() {
   else if ( Act == 41 && count <= 1 && millis() - step[4][1] > 500  ) { Act = 42; step[4][2] = millis();          }//past node, turn
 
   else if( todo[tp] == 1 && count >=4 && Act == 1 ) { Act = 11; step[1][1] = millis(); }                        //reach node
-  else if ( Act == 11 && count <= 1 && millis() - step[1][1] > 1200 ) { Act = 12; step[1][2] = millis(); }//past node, turn
+  else if ( Act == 11 && count <= 1 && millis() - step[1][1] > 500 ) { Act = 12; step[1][2] = millis(); }//past node, turn
 
-  else if( todo[tp] == 3 && count >=4 && Act == 1 ) { Act = 32; step[3][2] = millis(); }                        //32start turning
+  else if( todo[tp] == 3 && count >=4 && Act == 1 ) { Act = 31; step[3][1] = millis(); }   //U turn at different speed
+  else if( Act == 31 && millis() - step[3][1] > 700) { Act = 32; step[3][2] = millis(); }     
   
 
-  else if( millis() - step[2][2] > 400 && Act == 22 && count <= 2 && (val[2] > 0 || val[3] > 0 || val[4] > 0 ) ) { 
+  else if( millis() - step[2][2] > 400 && Act == 22 && count > 0 && count <= 3) { //count <= 2 && (val[2] > 0 || val[3] > 0 || val[4] > 0 ) ) { 
       Act = 1; tp++;  //found line
   }
-  else if( millis() - step[4][2] > 400 && Act == 42 && count <= 3 && (val[2] > 0 || val[3] > 0 || val[4] > 0 ) ) { 
+  else if( millis() - step[4][2] > 400 && Act == 42 && count > 0 && count <= 3 ) { 
       Act = 1; tp++;  //found line
   }
-  else if( millis() - step[3][2] > 400 && Act == 32 && count <= 3 && (val[2] > 0 || val[3] > 0 || val[4] > 0 ) ) { //millis() - step[3][2] > 500 &&
+  else if( Act == 32 && count > 0 && count <= 3 ) { 
       Act = 1; tp++;  //found line, finished step
   }
-  else if( Act == 12 && count <= 3 && (val[2] > 0 || val[3] > 0 || val[4] > 0 ) ) { 
+  else if( Act == 12 && count > 0 && count <= 3 ) { 
       Act = 1; tp++;  //found line, finished step
   }
   if(tp>500) tp = 1;
 
-  if( Act == 32 || Act == 31 ) turnLeft(120, 120);      //U turn does not require going past node
-  else if( Act == 22 ) turnLeft( 100, 100 );
-  else if( Act == 42 ) turnRight( 100, 100 );
-  else if(Act == 12) stopMotors();
-  //else moveForward( r , l );       //Change to Tracking later
-  else Tracking();
-  //if(Act != dp) Serial.println(Act) ;dp = Act;
   
+  if( Act == 22 ) turnLeft( 180, 120 );
+  else if( Act == 42 ) turnRight( 180, 150 ); 
+  else if( Act == 31 ) turnLeft(150, 150);      //U turn 
+  else if( Act == 32) turnLeft(100 , 100);
+  
+  //else moveForward( r , l );       //Pick one
+  else Tracking();
+    
 }
 
 
