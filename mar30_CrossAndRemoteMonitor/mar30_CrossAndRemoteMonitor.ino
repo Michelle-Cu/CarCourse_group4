@@ -1,6 +1,6 @@
 #include <SPI.h>
 #include <MFRC522.h>
-#define CUSTOM_NAME "HM10-10"
+#define CUSTOM_NAME "HM10_Mega"
 
 #define analog1  A3
 #define analog2  A4
@@ -62,62 +62,54 @@ void setup() {
   while (!Serial);
   Serial.println("\n--- HM-10 Robust Initialization ---");
 
-  // 1. Find Current Baud Rate
-  int currentBaudIdx = -1;
+  // 1. Automatic Baud Rate Detection
   for (int i = 0; i < 9; i++) {
-    Serial.print("Probing "); Serial.print(baudRates[i]); Serial.print("... ");
+    Serial.print("Testing baud rate: ");
+    Serial.println(baudRates[i]);
+    
     Serial3.begin(baudRates[i]);
-    delay(200);
-    Serial3.print("AT");
-    if (waitForResponse("OK", 500)) {
-      Serial.println("DETECTED!");
-      currentBaudIdx = i;
-      break;
+    Serial3.setTimeout(100);
+    delay(100);
+
+    // 2. Force Disconnection
+    Serial3.print("AT"); 
+    
+    if (waitForResponse("OK", 800)) {
+      Serial.println("HM-10 detected and ready.");
+      moduleReady = true;
+      break; 
+    } else {
+      Serial3.end();
+      delay(100);
     }
-    Serial3.end();
   }
 
-  if (currentBaudIdx == -1) {
+  if (!moduleReady) {
     Serial.println("CRITICAL ERROR: HM-10 not responding.");
     return;
   }
 
-  // 2. Factory Reset to known state
-  Serial.print("Restoring Defaults (AT+RENEW)... ");
-  Serial3.print("AT+RENEW");
-  delay(600);
-  
-  // 3. Re-Sync at 9600
-  Serial3.begin(9600);
-  delay(200);
-  Serial.print("Verifying 9600 sync... ");
-  Serial3.print("AT");
-  if (waitForResponse("OK", 500)) Serial.println("OK.");
-  else Serial.println("Proceeding...");
+  // 3. Restore Factory Defaults
+  Serial.println("Restoring factory defaults...");
+  sendATCommand("AT+RENEW"); 
+  delay(500);
 
-  // 4. Configure Pairing Parameters AT 9600
-  Serial.print("Setting Name to "); Serial.print(CUSTOM_NAME); Serial.print("... ");
+  // 4. Set Custom Name
+  Serial.print("Setting name to: ");
+  Serial.println(CUSTOM_NAME);
   String nameCmd = "AT+NAME" + String(CUSTOM_NAME);
-  Serial3.print(nameCmd);
-  waitForResponse("OK", 1000);
-
-  Serial.print("Setting Mode to Peripheral... ");
-  Serial3.print("AT+ROLE0"); 
-  waitForResponse("OK", 500);
-
-  Serial.print("Enabling Immediate Advertising... ");
-  Serial3.print("AT+IMME0"); 
-  waitForResponse("OK", 500);
-
-  Serial.print("Enabling Connect Notification... ");
-  Serial3.print("AT+NOTI1"); 
-  waitForResponse("OK", 500);
-
-  Serial.print("Finalizing (AT+RESET)... ");
-  Serial3.print("AT+RESET");
-  waitForResponse("OK", 1000);
+  sendATCommand(nameCmd.c_str()); 
   
-  delay(1000); 
+  // 5. Enable Connection Notifications
+  Serial.println("Enabling notifications...");
+  sendATCommand("AT+NOTI1"); 
+
+  // 6. Restart the module to apply changes
+  Serial.println("Restarting module...");
+  sendATCommand("AT+RESET"); 
+  delay(1000);
+  Serial3.begin(9600); 
+  
   Serial.println("--- HM-10 Ready at 9600 Baud ---\n");
 }
 
@@ -129,13 +121,23 @@ void loop() {
 
   loopCycleCnt++;
 
-  // 1. Process ESP32 commands
+  // 1. Process ESP32 commands (Robust Filtering)
   if (Serial3.available()) {
-    String cmd = Serial3.readStringUntil('\n');
-    cmd.trim();
-    if (cmd.length() > 0) {
-      Serial.print("Remote Command: ");
-      Serial.println(cmd);
+    static String inputBuffer = "";
+    while (Serial3.available()) {
+      char c = Serial3.read();
+      if (c == '\n' || c == '\r') {
+        if (inputBuffer.length() > 0) {
+          inputBuffer.trim();
+          if (inputBuffer.length() > 0) {
+            Serial.print("Remote Command: ");
+            Serial.println(inputBuffer);
+          }
+          inputBuffer = "";
+        }
+      } else if (isPrintable(c)) {
+        inputBuffer += c;
+      }
     }
   }
 

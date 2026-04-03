@@ -7,7 +7,7 @@ import datetime
 import os
 
 PORT = 'COM8'
-EXPECTED_NAME = 'HM10-10'
+EXPECTED_NAME = 'HM10_Mega'
 
 # Globals for average calculations
 avgLoopTime = 0.0
