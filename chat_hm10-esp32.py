@@ -7,7 +7,7 @@ import datetime
 import os
 
 PORT = 'COM8'
-EXPECTED_NAME = 'HM10_Mega'
+EXPECTED_NAME = 'HM10_4'
 
 # Globals for average calculations
 avgLoopTime = 0.0
@@ -15,8 +15,12 @@ avgIrCycleTime = 0.0
 loopSamples = 0
 irSamples = 0
 
+# Globals for move sequence
+moveSq = [1, 3, 2, 3, 4, 3] * 167
+move_index = 0
+
 def background_listener(bridge, csv_writer, csv_file):
-    global avgLoopTime, avgIrCycleTime, loopSamples, irSamples
+    global avgLoopTime, avgIrCycleTime, loopSamples, irSamples, move_index
     while True:
         messages = bridge.listen()
         for msg in messages:
@@ -26,12 +30,26 @@ def background_listener(bridge, csv_writer, csv_file):
                 
             timestamp = datetime.datetime.now().strftime('%H:%M:%S.%f')[:-3]
             
-            # Print received message for monitoring
-            print(f"[{timestamp}] HM10: {msg}")
-            
-            # Try to log as data if it matches the 14-part format
+            # Handle Next Move Request
+            if msg == "reqNxtMove":
+                if move_index < len(moveSq):
+                    next_move = moveSq[move_index]
+                    move_index += 1
+                    response = f"nxtMove:{next_move}"
+                    bridge.send(response)
+                    print(f"[{timestamp}] 🤖 Request: reqNxtMove -> Sent: {response}")
+                else:
+                    print(f"[{timestamp}] 🤖 Request: reqNxtMove -> No more moves!")
+                continue
+
+            # Handle RFID messages
+            if msg.startswith("RFID:"):
+                print(f"[{timestamp}] 🔑 {msg}")
+                continue
+
+            # Try to log as data if it matches the 9-part format
             parts = msg.split(',')
-            if len(parts) == 14:
+            if len(parts) == 9:
                 try:
                     loopCnt = int(parts[0])
                     thisLoopTime = int(parts[1])
@@ -58,7 +76,11 @@ def background_listener(bridge, csv_writer, csv_file):
                     csv_writer.writerow(row)
                     csv_file.flush()
                 except (ValueError, IndexError):
-                    pass 
+                    # If it's not data, print it anyway
+                    print(f"[{timestamp}] HM10: {msg}")
+            else:
+                # Print other messages for monitoring (e.g. status updates)
+                print(f"[{timestamp}] HM10: {msg}")
 
         time.sleep(0.05)
 
@@ -74,6 +96,7 @@ def main():
         if bridge.set_hm10_name(EXPECTED_NAME):
             print("✅ Name updated successfully. Resetting ESP32...")
             bridge.reset()
+            # bridge = HM10ESP32Bridge(port=PORT)
         else:
             print("❌ Failed to set name. Exiting.")
             sys.exit(1)
@@ -109,8 +132,7 @@ def main():
         csv_writer.writerow([
             'Timestamp', 'LoopCnt', 'LoopTime(ms)', 'AvgLoopTime(ms)',
             'IrCnt', 'IrTime(ms)', 'AvgIrTime(ms)',
-            'IR1', 'IR2', 'IR3', 'IR4', 'IR5', 
-            'T1', 'T2', 'T3', 'T4', 'T5'
+            'IR1', 'IR2', 'IR3', 'IR4', 'IR5'
         ])
         print(f"Logging data to {filename}...")
         

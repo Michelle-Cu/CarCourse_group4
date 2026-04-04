@@ -58,26 +58,28 @@ class HM10ESP32Bridge:
                     complete_messages.append(payload)
                     continue
 
+                # RFID: Always bypass sync logic
+                if payload.startswith("RFID:"):
+                    complete_messages.append(payload)
+                    continue
+
                 # DATA STREAM SYNC: If not in sync, we wait for a fragment that looks like 
                 # the start of a packet OR we wait for a newline to reset.
                 if not self.in_sync:
                     # If this payload contains a comma, it's likely data.
-                    # We only start syncing AFTER we've seen a newline from a previous (partial) packet.
-                    # Since we can't see the newline (it was split), we use the next log line as a proxy.
-                    # Simplified: if the previous packet was "broken", this new log line is a fresh start.
                     self.in_sync = True 
                     self.msg_accumulator = ""
 
                 self.msg_accumulator += payload
                 
-                # Check if we have a full packet (13 commas = 14 parts)
-                if self.msg_accumulator.count(',') >= 13:
-                    # If there's more than 13 commas, we might have multiple packets
+                # Check if we have a full packet (8 commas = 9 parts)
+                if self.msg_accumulator.count(',') >= 8:
+                    # If there's more than 8 commas, we might have multiple packets
                     parts = self.msg_accumulator.split(',')
-                    while len(parts) >= 14:
-                        msg_parts = parts[:14]
+                    while len(parts) >= 9:
+                        msg_parts = parts[:9]
                         complete_messages.append(",".join(msg_parts).strip())
-                        parts = parts[14:]
+                        parts = parts[9:]
                     self.msg_accumulator = ",".join(parts)
                 
                 # If the payload had a trailing character that suggests a break in the Arduino's transmission
