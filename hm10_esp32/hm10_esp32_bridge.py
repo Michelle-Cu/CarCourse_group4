@@ -3,6 +3,10 @@ import time
 import re
 
 class HM10ESP32Bridge:
+    """
+    A robust bridge for communicating with an HM-10 Bluetooth module via an ESP32.
+    Enhanced with line-sync and priority handling to prevent data corruption.
+    """
     def __init__(self, port, rx_timeout=0.1):
         self.ser = serial.Serial(port=port, baudrate=115200, timeout=rx_timeout)
         # Matches 'bt_com' tag logs from ESP32
@@ -11,7 +15,6 @@ class HM10ESP32Bridge:
         self.ansi_regex = re.compile(r'\x1b\[[0-9;]*m')
         self.msg_accumulator = ""
         self.raw_accumulator = ""
-        self.in_sync = False 
         time.sleep(1) 
 
     def flush(self):
@@ -19,10 +22,12 @@ class HM10ESP32Bridge:
         self.ser.read_all()
         self.msg_accumulator = ""
         self.raw_accumulator = ""
-        self.in_sync = False
 
     def _read_bt_com_payloads(self):
-        """Reads and cleans all 'bt_com' tagged logs currently in buffer, joining fragments."""
+        """
+        Reads logs and stitches fragments into complete messages.
+        Uses robust line splitting and avoids aggressive stripping to prevent merging.
+        """
         if self.ser.in_waiting > 0:
             try:
                 self.raw_accumulator += self.ser.read_all().decode('utf-8', errors='ignore')
@@ -33,14 +38,14 @@ class HM10ESP32Bridge:
             return []
 
         complete_messages = []
-        # Process complete lines from the raw serial stream
+        # 1. Process complete lines from the ESP32 log stream
         while '\n' in self.raw_accumulator or '\r' in self.raw_accumulator:
             m = re.search(r'[\r\n]', self.raw_accumulator)
             if not m: break
             
             line = self.raw_accumulator[:m.start()]
-            # Advance accumulator past the newline/cr
             self.raw_accumulator = self.raw_accumulator[m.end():]
+            
             # Handle \r\n as a single break
             if m.group() == '\r' and self.raw_accumulator.startswith('\n'):
                 self.raw_accumulator = self.raw_accumulator[1:]
@@ -49,77 +54,84 @@ class HM10ESP32Bridge:
             
             match = self.log_regex.search(line)
             if match:
-                # Clean ANSI colors and whitespace
-                payload = self.ansi_regex.sub('', match.group(1)).strip()
-                if not payload: continue
+                # Clean ANSI colors but preserve terminators if present
+                payload = self.ansi_regex.sub('', match.group(1))
+
+                # PRIORITY MESSAGES: Handle RFID and reqNxtMove immediately
+                if "reqNxtMove" in payload or "RFID:" in payload:
+                    if "reqNxtMove" in payload:
+                        complete_messages.append("reqNxtMove")
+                        payload = payload.replace("reqNxtMove", "")
+                    
+                    if "RFID:" in payload:
+                        rfid_match = re.search(r'RFID:[a-zA-Z0-9]+', payload)
+                        if rfid_match:
+                            complete_messages.append(rfid_match.group())
+                            payload = payload.replace(rfid_match.group(), "")
 
                 # AT COMMAND RESPONSES: Always bypass sync logic
                 if payload.startswith("OK+") or payload.startswith("ERROR+"):
-                    complete_messages.append(payload)
+                    complete_messages.append(payload.strip())
                     continue
 
-                # RFID: Always bypass sync logic
-                if payload.startswith("RFID:"):
-                    complete_messages.append(payload)
-                    continue
+                # Add to data accumulator
+                if payload.strip():
+                    self.msg_accumulator += payload
+                    # Add newline if it's a complete log line to prevent gluing
+                    if not payload.endswith('\n') and not payload.endswith('\r'):
+                        self.msg_accumulator += '\n'
 
-                # DATA STREAM SYNC: If not in sync, we wait for a fragment that looks like 
-                # the start of a packet OR we wait for a newline to reset.
-                if not self.in_sync:
-                    # If this payload contains a comma, it's likely data.
-                    self.in_sync = True 
-                    self.msg_accumulator = ""
+        # 2. Extract complete messages from the data accumulator
+        if '\n' in self.msg_accumulator or '\r' in self.msg_accumulator:
+            parts = re.split(r'[\r\n]+', self.msg_accumulator)
+            
+            if self.msg_accumulator and self.msg_accumulator[-1] in "\r\n":
+                for p in parts:
+                    if p.strip(): complete_messages.append(p.strip())
+                self.msg_accumulator = ""
+            else:
+                for p in parts[:-1]:
+                    if p.strip(): complete_messages.append(p.strip())
+                self.msg_accumulator = parts[-1]
 
-                self.msg_accumulator += payload
-                
-                # Check if we have a full packet (8 commas = 9 parts)
-                if self.msg_accumulator.count(',') >= 8:
-                    # If there's more than 8 commas, we might have multiple packets
-                    parts = self.msg_accumulator.split(',')
-                    while len(parts) >= 9:
-                        msg_parts = parts[:9]
-                        complete_messages.append(",".join(msg_parts).strip())
-                        parts = parts[9:]
-                    self.msg_accumulator = ",".join(parts)
-                
-                # If the payload had a trailing character that suggests a break in the Arduino's transmission
-                # (The ESP32 firmware usually sends a new log line when the Arduino sends \n)
-                # For safety, if the accumulator gets too long, we flush it.
-                if len(self.msg_accumulator) > 500:
-                    self.msg_accumulator = ""
-                    self.in_sync = False
+        # Comma-based fallback: handle multi-packet chunks
+        while self.msg_accumulator.count(',') >= 8:
+            parts = self.msg_accumulator.split(',')
+            if len(parts) >= 9:
+                complete_messages.append(",".join(parts[:9]).strip())
+                self.msg_accumulator = ",".join(parts[9:])
+            else:
+                break
+
+        # Safety flush
+        if len(self.msg_accumulator) > 1000:
+            self.msg_accumulator = ""
 
         return complete_messages
 
     def set_hm10_name(self, name, timeout=3.0):
-        """
-        Sends AT+NAME<name> and verifies OK+SET<name> reply.
-        Returns True on success, False on timeout/failure.
-        """
+        """Sends AT+NAME<name> and verifies OK+SET reply."""
         self.ser.flushInput()
-        command = f"AT+NAME{name}\r\n"
-        self.ser.write(command.encode('utf-8'))
-        
-        # Poll for the specific OK+SET response
+        self.ser.write(f"AT+NAME{name}\r\n".encode('utf-8'))
         pattern = re.compile(fr"OK\+SET[:\s]*{re.escape(name)}")
         start_time = time.time()
         while (time.time() - start_time) < timeout:
             for entry in self._read_bt_com_payloads():
-                if pattern.search(entry):
-                    return True
+                if pattern.search(entry): return True
             time.sleep(0.05)
         return False
 
-    def get_hm10_name(self, timeout=2.0):
-        """Queries the device name currently in NVS."""
-        self.ser.flushInput()
-        self.ser.write(b"AT+NAME?\r\n")
-        start_time = time.time()
-        while (time.time() - start_time) < timeout:
-            for entry in self._read_bt_com_payloads():
-                if "OK+NAME" in entry:
-                    return entry.replace("OK+NAME", "").replace(":", "").strip()
-            time.sleep(0.05)
+    def get_hm10_name(self, timeout=3.0):
+        """Queries the device name with retries."""
+        for attempt in range(2):
+            self.ser.flushInput()
+            self.ser.write(b"AT+NAME?\r\n")
+            start_time = time.time()
+            while (time.time() - start_time) < timeout:
+                for entry in self._read_bt_com_payloads():
+                    if "OK+NAME" in entry:
+                        return entry.replace("OK+NAME", "").replace(":", "").strip()
+                time.sleep(0.05)
         return None
 
     def get_status(self, timeout=2.0):
@@ -135,25 +147,25 @@ class HM10ESP32Bridge:
         return "TIMEOUT"
 
     def reset(self):
-        """Triggers AT+RESET and returns True if OK+RESET is received."""
+        """Triggers AT+RESET."""
         self.ser.write(b"AT+RESET\r\n")
         start_time = time.time()
         while (time.time() - start_time) < 5.0:
             for entry in self._read_bt_com_payloads():
                 if "OK+RESET" in entry:
-                    print("Waiting for ESP32 to reboot (10s)...")
                     time.sleep(10) 
                     return True
             time.sleep(0.05)
         return False
 
     def listen(self):
-        """Returns a list of data payloads from BLE (ignores AT replies)."""
+        """Returns only non-AT payloads."""
         logs = self._read_bt_com_payloads()
         return [l for l in logs if not (l.startswith("OK+") or l.startswith("ERROR+"))]
 
     def send(self, text):
-        """Sends data to be forwarded to HM-10 via GATT."""
+        """Sends data with mandatory newline."""
         if not text.endswith("\n"):
             text += "\n"
         self.ser.write(text.encode('utf-8'))
+        time.sleep(0.05)

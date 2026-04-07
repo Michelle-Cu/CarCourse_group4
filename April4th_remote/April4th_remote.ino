@@ -2,7 +2,7 @@
 #include <MFRC522.h>
 
 // --- Configuration & Constants ---
-#define CUSTOM_NAME "HM10_4"
+#define CUSTOM_NAME "BT4"
 
 // Pin Definitions (Common to both versions)
 #define digital1  A3
@@ -26,13 +26,14 @@ MFRC522 mfrc522(SS_PIN, RST_PIN);
 // --- Bluetooth & Time Recording Global Variables ---
 long baudRates[] = {9600, 19200, 38400, 57600, 115200, 4800, 2400, 1200, 230400};
 bool moduleReady = false;
+bool BTConnected = false;
 
 unsigned long lastLoopTime = 0;
 unsigned long lastIrTime = 0;
 unsigned long lastBtTime = 0;
 
 const unsigned long irCyclePeriod = 20; // Fast tracking (20ms)
-const unsigned long btCyclePeriod = 100; // Stable BT reporting (100ms)
+const unsigned long btCyclePeriod = 200; // Stable BT reporting (100ms)
 
 unsigned long irCycleCnt = 0;
 unsigned long loopCycleCnt = 0;
@@ -53,7 +54,7 @@ double sumError = 0;
 double w2 = 1.0; 
 double w3 = 3.0;
 
-int Act = 1, currentMove = 0;     // 1: keep going, 2: turn left, 3: U-turn, 4: turn right
+int Act = 1, currentMove = 0, pt;     // 1: keep going, 2: turn left, 3: U-turn, 4: turn right
 unsigned long step[5][5];
 unsigned long pMillis = 0;
 
@@ -141,10 +142,17 @@ void loop() {
         if (inputBuffer.length() > 0) {
           inputBuffer.trim();
           if (inputBuffer.length() > 0) {
+            // Ignore ESP32 internal status messages that might be concatenated
+            if (inputBuffer.indexOf("OK+") != -1 || inputBuffer.indexOf("ERROR+") != -1) {
+              inputBuffer = "";
+              continue; 
+            }
+
+            BTConnected = true;
             Serial.print("Remote Command: ");
             Serial.println(inputBuffer);
             
-            if (inputBuffer.startsWith("nxtMove:")) {
+            if (inputBuffer.startsWith("nxtMove:") && currentMove == 0) {
               currentMove = inputBuffer.substring(8).toInt();
               Serial.print("Next move set to: ");
               Serial.println(currentMove);
@@ -187,6 +195,20 @@ void loop() {
     int count = 0;
     for(int i=1; i<6; i++) if(val[i] == HIGH) count++;
 
+    // --- Manual Override via Serial Monitor (New Section) ---
+    if (Serial.available()) {
+      int cnt = Serial.parseInt();
+      // Flush the remaining buffer (like \n or \r) so it doesn't trigger a 0 on the next loop
+      while(Serial.available() > 0) Serial.read(); 
+      
+      if (cnt >= 0 && cnt <= 5) {
+        count = cnt;
+        Serial.print(">>> Manual Override! count set to: ");
+        Serial.println(count);
+      }
+    }
+    // --------------------------------------------------------
+
     // Node Logic (from April1st)
     if( currentMove == 2 && count >=4 && Act == 1 ) { Act = 21; step[2][1] = millis(); }                        //reach node
     else if ( Act == 21 && count <= 3 && millis() - step[2][1] > 500 ) { Act = 22; step[2][2] = millis();          }//past node, turn
@@ -201,16 +223,16 @@ void loop() {
     else if( Act == 31 && millis() - step[3][1] > 700) { Act = 32; step[3][2] = millis(); }     
     
     else if( millis() - step[2][2] > 400 && Act == 22 && count > 0 && count <= 3) { 
-        Act = 1; currentMove = 0; Serial3.println("reqNxtMove"); //found line
+        Act = 1; currentMove = 0; Serial.println("Requesting next move..."); Serial3.println("reqNxtMove"); //found line
     }
     else if( millis() - step[4][2] > 400 && Act == 42 && count > 0 && count <= 3 ) { 
-        Act = 1; currentMove = 0; Serial3.println("reqNxtMove"); //found line
+        Act = 1; currentMove = 0; Serial.println("Requesting next move..."); Serial3.println("reqNxtMove"); //found line
     }
     else if( Act == 32 && count > 0 && count <= 3 ) { 
-        Act = 1; currentMove = 0; Serial3.println("reqNxtMove"); //found line, finished step
+        Act = 1; currentMove = 0; Serial.println("Requesting next move..."); Serial3.println("reqNxtMove"); //found line, finished step
     }
     else if( Act == 12 && count > 0 && count <= 3 ) { 
-        Act = 1; currentMove = 0; Serial3.println("reqNxtMove"); //found line, finished step
+        Act = 1; currentMove = 0; Serial.println("Requesting next move..."); Serial3.println("reqNxtMove"); //found line, finished step
     }
 
     // Movement Execution
@@ -221,22 +243,13 @@ void loop() {
     else Tracking();
   }
 
-  // 4. Decoupled Bluetooth Reporting (Time Recording & Status)
-  if (currentMillis - lastBtTime >= btCyclePeriod) {
+  // 4. Connection Keep-Alive (Request move if idle)
+  if (currentMillis - lastBtTime >= 1000) {
     lastBtTime = currentMillis;
-    btCycleCnt++;
-
-    // Format: loopCycleCnt, thisLoopTime, irCycleCnt, thisIrTime, IR1..5 (Total 9 values)
-    Serial3.print(loopCycleCnt); Serial3.print(",");
-    Serial3.print(lastThisLoopTime); Serial3.print(",");
-    Serial3.print(irCycleCnt); Serial3.print(",");
-    Serial3.print(lastThisIrTime); Serial3.print(",");
-    
-    for (int i = 1; i <= 5; i++) {
-      Serial3.print(val[i]);
-      if (i < 5) Serial3.print(",");
+    if (!BTConnected) {
+      Serial.println("Requesting first move...");
+      Serial3.println("reqNxtMove");
     }
-    Serial3.println();
   }
 }
 
