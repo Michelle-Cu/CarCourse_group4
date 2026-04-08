@@ -231,7 +231,7 @@ void loop() {
     else if ( Act == 11 && count <= 1 && millis() - step[1][1] > 500 ) { Act = 12; step[1][2] = millis(); }//past node, turn
 
     else if( currentMove == 3 && count >=4 && Act == 1 ) { Act = 31; step[3][1] = millis(); }   //U turn at different speed
-    else if( Act == 31 && millis() - step[3][1] > 700) { Act = 32; step[3][2] = millis(); }     
+    else if( Act == 31 && count <= 3 && millis() - step[3][1] > 500) { Act = 32; step[3][2] = millis(); }     
     
     else if( millis() - step[2][2] > 400 && Act == 22 && count > 0 && count <= 3) { 
         Act = 1; currentMove = 0; Serial.println("Requesting next move..."); Serial3.println("reqNxtMove"); //found line
@@ -239,8 +239,8 @@ void loop() {
     else if( millis() - step[4][2] > 400 && Act == 42 && count > 0 && count <= 3 ) { 
         Act = 1; currentMove = 0; Serial.println("Requesting next move..."); // Serial3.println("reqNxtMove"); //found line
     }
-    else if( Act == 32 && count > 0 && count <= 3 ) { 
-        Act = 1; currentMove = 0; Serial.println("Requesting next move..."); // Serial3.println("reqNxtMove"); //found line, finished step
+    else if( millis() - step[3][2] > 400 && Act == 32 && count > 0 && count <= 3  ) { 
+        Act = 1; currentMove = 0; Serial.println("Requesting next move..."); Serial3.println("reqNxtMove"); //found line, finished step
     }
     else if( Act == 12 && count > 0 && count <= 3 ) { 
         Act = 1; currentMove = 0; Serial.println("Requesting next move..."); // Serial3.println("reqNxtMove"); //found line, finished step
@@ -249,7 +249,8 @@ void loop() {
     // Movement Execution
     if( Act == 22 ) turnLeft( 180, 120 );
     else if( Act == 42 ) turnRight( 180, 150 ); 
-    else if( Act == 31 ) turnLeft(150, 150);      //U turn 
+    else if( Act == 31) moveForward( 50, 50 ) ;
+    else if( Act == 32 ) turnLeft(150, 150);      //U turn 
     else if( Act == 32) turnLeft(100 , 100);
     else Tracking();
   }
