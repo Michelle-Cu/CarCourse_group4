@@ -44,12 +44,20 @@ def background_listener(bridge):
                 continue
 
             # Handle Next Move Request
-            if "reqNxtMove" in msg:
+            if "reqFirstMove" in msg or "reqNxtMove" in msg:
+                req_type = "reqFirstMove" if "reqFirstMove" in msg else "reqNxtMove"
+                
+                if "reqFirstMove" in msg:
+                    print(f"[{timestamp}] 🔄 Resetting move sequence (Arduino restarted)")
+                    move_index = 0
+                    waiting_for_ack = False
+                    current_pending_move = None
+
                 if waiting_for_ack:
                     # Arduino is re-asking because it didn't get the last one or ACK was lost
                     response = f"nxtMove:{current_pending_move}"
                     bridge.send(response)
-                    print(f"[{timestamp}] 🤖 Request: reqNxtMove -> Re-sending Pending: {response}")
+                    print(f"[{timestamp}] 🤖 Request: {req_type} -> Re-sending Pending: {response}")
                 else:
                     if move_index < len(moveSq):
                         next_move = moveSq[move_index]
@@ -58,9 +66,9 @@ def background_listener(bridge):
                         waiting_for_ack = True
                         response = f"nxtMove:{next_move}"
                         bridge.send(response)
-                        print(f"[{timestamp}] 🤖 Request: reqNxtMove -> Sent New: {response}")
+                        print(f"[{timestamp}] 🤖 Request: {req_type} -> Sent New: {response}")
                     else:
-                        print(f"[{timestamp}] 🤖 Request: reqNxtMove -> No more moves!")
+                        print(f"[{timestamp}] 🤖 Request: {req_type} -> No more moves!")
                 continue
 
             # Handle RFID messages

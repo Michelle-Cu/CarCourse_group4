@@ -27,13 +27,14 @@ MFRC522 mfrc522(SS_PIN, RST_PIN);
 long baudRates[] = {9600, 19200, 38400, 57600, 115200, 4800, 2400, 1200, 230400};
 bool moduleReady = false;
 bool BTConnected = false;
+bool movesStarted = false;
 
 unsigned long lastLoopTime = 0;
 unsigned long lastIrTime = 0;
 unsigned long lastBtTime = 0;
 
-const unsigned long irCyclePeriod = 20; // Fast tracking (20ms)
-const unsigned long btCyclePeriod = 60; // Stable BT reporting (100ms)
+const unsigned long irCyclePeriod = 0; // Fast tracking (20ms)
+const unsigned long btCyclePeriod = 200; // Stable BT reporting (200ms)
 
 unsigned long irCycleCnt = 0;
 unsigned long loopCycleCnt = 0;
@@ -56,6 +57,7 @@ double w3 = 3.0;
 
 int Act = 1, currentMove = 0, pt;     // 1: keep going, 2: turn left, 3: U-turn, 4: turn right
 String pendingRFID = "";
+unsigned long lastRfidTime = 0;
 unsigned long step[5][5];
 unsigned long pMillis = 0;
 int count;
@@ -119,8 +121,8 @@ void setup() {
   }
 
   // Request initial move from Python
-  // Serial.println("Requesting first move...");
-  // Serial3.println("reqNxtMove");
+  Serial.println("Requesting first move...");
+  Serial3.println("reqFirstMove");
 
   lastLoopTime = millis();
   lastIrTime = millis();
@@ -158,12 +160,23 @@ void loop() {
               int next_val = inputBuffer.substring(8).toInt();
               if (currentMove == 0) {
                 currentMove = next_val;
+                movesStarted = true; // Mark that sequence has started
                 Serial.print("Next move set to: ");
                 Serial.println(currentMove);
               }
               // Always acknowledge with the actual move value we have
               Serial3.print("nxtMoveRecived: ");
               Serial3.println(currentMove);
+            }
+
+            if (inputBuffer.startsWith("rfidAck:")) {
+              String ackUID = inputBuffer.substring(8);
+              ackUID.trim();
+              if (ackUID == pendingRFID) {
+                Serial.print("RFID confirmed: ");
+                Serial.println(pendingRFID);
+                pendingRFID = "";
+              }
             }
           }
           inputBuffer = "";
@@ -176,13 +189,24 @@ void loop() {
 
   // 2. RFID Scanning
   if (mfrc522.PICC_IsNewCardPresent() && mfrc522.PICC_ReadCardSerial()) {
-    String rfidStr = "RFID:";
+    String rfidStr = "";
     for (byte i = 0; i < mfrc522.uid.size; i++) {
       if (mfrc522.uid.uidByte[i] < 0x10) rfidStr += "0";
       rfidStr += String(mfrc522.uid.uidByte[i], HEX);
     }
-    Serial.println(rfidStr);
-    Serial3.println(rfidStr); // Send to ESP32/Bluetooth
+    
+    // Only set as pending if it's a DIFFERENT card OR if 2 seconds have passed
+    if (rfidStr != pendingRFID || (currentMillis - lastRfidTime > 2000)) {
+      pendingRFID = rfidStr;
+      lastRfidTime = currentMillis;
+      Serial.print("New RFID scanned: ");
+      Serial.println(pendingRFID);
+      
+      // Initial send
+      Serial3.print("RFID:");
+      Serial3.println(pendingRFID);
+    }
+
     mfrc522.PICC_HaltA(); 
     mfrc522.PCD_StopCrypto1();
   }
@@ -217,59 +241,56 @@ void loop() {
     }
     // --------------------------------------------------------
 
-    if (count >= 4) Tp = 100;
-    else Tp = 150;
+    // if (count >= 4) Tp = 100;
+    // else Tp = 150;
 
     // Node Logic (from April1st)
     if( currentMove == 2 && count >=4 && Act == 1 ) { Act = 21; step[2][1] = millis(); }                        //reach node
-    else if ( Act == 21 && count <= 3 && millis() - step[2][1] > 500 ) { Act = 22; step[2][2] = millis();          }//past node, turn
+    else if ( Act == 21 && count <= 3 && millis() - step[2][1] > 700 ) { Act = 22; step[2][2] = millis();          }//past node, turn
 
     else if( currentMove == 4 && count >=4 && Act == 1 ) { Act = 41; step[4][1] = millis(); }                        //reach node
-    else if ( Act == 41 && count <= 1 && millis() - step[4][1] > 500  ) { Act = 42; step[4][2] = millis();          }//past node, turn
+    else if ( Act == 41 && count <= 1 && millis() - step[4][1] > 700  ) { Act = 42; step[4][2] = millis();          }//past node, turn
 
     else if( currentMove == 1 && count >=4 && Act == 1 ) { Act = 11; step[1][1] = millis(); }                        //reach node
-    else if ( Act == 11 && count <= 1 && millis() - step[1][1] > 500 ) { Act = 12; step[1][2] = millis(); }//past node, turn
+    else if ( Act == 11 && count <= 1 && millis() - step[1][1] > 700 ) { Act = 12; step[1][2] = millis(); }//past node, turn
 
     else if( currentMove == 3 && count >=4 && Act == 1 ) { Act = 31; step[3][1] = millis(); }   //U turn at different speed
-    else if( Act == 31 && count <= 3 && millis() - step[3][1] > 500) { Act = 32; step[3][2] = millis(); }     
+    else if( Act == 31 && count <= 3 && millis() - step[3][1] > 400) { Act = 32; step[3][2] = millis(); }     
     
     else if( millis() - step[2][2] > 400 && Act == 22 && count > 0 && count <= 3) { 
-        Act = 1; currentMove = 0; Serial.println("Requesting next move..."); Serial3.println("reqNxtMove"); //found line
+        Act = 1; currentMove = 0; 
     }
     else if( millis() - step[4][2] > 400 && Act == 42 && count > 0 && count <= 3 ) { 
-        Act = 1; currentMove = 0; Serial.println("Requesting next move..."); // Serial3.println("reqNxtMove"); //found line
+        Act = 1; currentMove = 0; 
     }
     else if( millis() - step[3][2] > 400 && Act == 32 && count > 0 && count <= 3  ) { 
-        Act = 1; currentMove = 0; Serial.println("Requesting next move..."); Serial3.println("reqNxtMove"); //found line, finished step
+        Act = 1; currentMove = 0; 
     }
     else if( Act == 12 && count > 0 && count <= 3 ) { 
-        Act = 1; currentMove = 0; Serial.println("Requesting next move..."); // Serial3.println("reqNxtMove"); //found line, finished step
+        Act = 1; currentMove = 0; 
     }
 
     // Movement Execution
     if( Act == 22 ) turnLeft( 180, 120 );
     else if( Act == 42 ) turnRight( 180, 150 ); 
-    else if( Act == 31) moveForward( 50, 50 ) ;
-    else if( Act == 32 ) turnLeft(150, 150);      //U turn 
+    else if( Act == 31 ) turnLeft(150, 150);      //U turn 
     else if( Act == 32) turnLeft(100 , 100);
     else Tracking();
   }
 
   // 4. Connection Keep-Alive (Request move if idle)
-  if (currentMillis - lastBtTime >= 1000) {
+  if (currentMillis - lastBtTime >= btCyclePeriod) {
     lastBtTime = currentMillis;
     if (!BTConnected || currentMove == 0) {
-      Serial.println("Requesting first move...");
-      Serial3.println("reqNxtMove");
+      if (!movesStarted) {
+        Serial.println("Requesting first move...");
+        Serial3.println("reqFirstMove");
+      } else {
+        Serial.println("Requesting next move...");
+        Serial3.println("reqNxtMove");
+      }
     }
-
-    if (pendingRFID != "") {
-      Serial.print("Re-sending RFID: ");
-      Serial.println(pendingRFID);
-      Serial3.print("RFID:");
-      Serial3.println(pendingRFID);
-    }
-
+    // Only send count to keep bandwidth free for moves and RFID scans
     Serial3.println(count);
   }
 }
