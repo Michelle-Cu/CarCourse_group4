@@ -33,7 +33,7 @@ unsigned long lastIrTime = 0;
 unsigned long lastBtTime = 0;
 
 const unsigned long irCyclePeriod = 20; // Fast tracking (20ms)
-const unsigned long btCyclePeriod = 200; // Stable BT reporting (100ms)
+const unsigned long btCyclePeriod = 60; // Stable BT reporting (100ms)
 
 unsigned long irCycleCnt = 0;
 unsigned long loopCycleCnt = 0;
@@ -55,8 +55,10 @@ double w2 = 1.0;
 double w3 = 3.0;
 
 int Act = 1, currentMove = 0, pt;     // 1: keep going, 2: turn left, 3: U-turn, 4: turn right
+String pendingRFID = "";
 unsigned long step[5][5];
 unsigned long pMillis = 0;
+int count;
 
 void setup() {
   Serial.begin(115200); 
@@ -117,8 +119,8 @@ void setup() {
   }
 
   // Request initial move from Python
-  Serial.println("Requesting first move...");
-  Serial3.println("reqNxtMove");
+  // Serial.println("Requesting first move...");
+  // Serial3.println("reqNxtMove");
 
   lastLoopTime = millis();
   lastIrTime = millis();
@@ -152,10 +154,16 @@ void loop() {
             Serial.print("Remote Command: ");
             Serial.println(inputBuffer);
             
-            if (inputBuffer.startsWith("nxtMove:") && currentMove == 0) {
-              currentMove = inputBuffer.substring(8).toInt();
-              Serial.print("Next move set to: ");
-              Serial.println(currentMove);
+            if (inputBuffer.startsWith("nxtMove:")) {
+              int next_val = inputBuffer.substring(8).toInt();
+              if (currentMove == 0) {
+                currentMove = next_val;
+                Serial.print("Next move set to: ");
+                Serial.println(currentMove);
+              }
+              // Always acknowledge with the actual move value we have
+              Serial3.print("nxtMoveRecived: ");
+              Serial3.println(currentMove);
             }
           }
           inputBuffer = "";
@@ -192,7 +200,7 @@ void loop() {
     val[4] = digitalRead(digital4);
     val[5] = digitalRead(digital5);
 
-    int count = 0;
+    count = 0;
     for(int i=1; i<6; i++) if(val[i] == HIGH) count++;
 
     // --- Manual Override via Serial Monitor (New Section) ---
@@ -208,6 +216,9 @@ void loop() {
       }
     }
     // --------------------------------------------------------
+
+    if (count >= 4) Tp = 100;
+    else Tp = 150;
 
     // Node Logic (from April1st)
     if( currentMove == 2 && count >=4 && Act == 1 ) { Act = 21; step[2][1] = millis(); }                        //reach node
@@ -226,13 +237,13 @@ void loop() {
         Act = 1; currentMove = 0; Serial.println("Requesting next move..."); Serial3.println("reqNxtMove"); //found line
     }
     else if( millis() - step[4][2] > 400 && Act == 42 && count > 0 && count <= 3 ) { 
-        Act = 1; currentMove = 0; Serial.println("Requesting next move..."); Serial3.println("reqNxtMove"); //found line
+        Act = 1; currentMove = 0; Serial.println("Requesting next move..."); // Serial3.println("reqNxtMove"); //found line
     }
     else if( Act == 32 && count > 0 && count <= 3 ) { 
-        Act = 1; currentMove = 0; Serial.println("Requesting next move..."); Serial3.println("reqNxtMove"); //found line, finished step
+        Act = 1; currentMove = 0; Serial.println("Requesting next move..."); // Serial3.println("reqNxtMove"); //found line, finished step
     }
     else if( Act == 12 && count > 0 && count <= 3 ) { 
-        Act = 1; currentMove = 0; Serial.println("Requesting next move..."); Serial3.println("reqNxtMove"); //found line, finished step
+        Act = 1; currentMove = 0; Serial.println("Requesting next move..."); // Serial3.println("reqNxtMove"); //found line, finished step
     }
 
     // Movement Execution
@@ -246,10 +257,19 @@ void loop() {
   // 4. Connection Keep-Alive (Request move if idle)
   if (currentMillis - lastBtTime >= 1000) {
     lastBtTime = currentMillis;
-    if (!BTConnected) {
+    if (!BTConnected || currentMove == 0) {
       Serial.println("Requesting first move...");
       Serial3.println("reqNxtMove");
     }
+
+    if (pendingRFID != "") {
+      Serial.print("Re-sending RFID: ");
+      Serial.println(pendingRFID);
+      Serial3.print("RFID:");
+      Serial3.println(pendingRFID);
+    }
+
+    Serial3.println(count);
   }
 }
 

@@ -4,15 +4,17 @@ import sys
 import threading
 import datetime
 
-PORT = 'COM12'
+PORT = 'COM8'
 EXPECTED_NAME = 'BT4'
 
 # Globals for move sequence
 moveSq = [1, 3, 2, 3, 4, 3] * 167
 move_index = 0
+waiting_for_ack = False
+current_pending_move = None
 
 def background_listener(bridge):
-    global move_index
+    global move_index, waiting_for_ack, current_pending_move
     while True:
         messages = bridge.listen()
         for msg in messages:
@@ -21,19 +23,55 @@ def background_listener(bridge):
                 
             timestamp = datetime.datetime.now().strftime('%H:%M:%S.%f')[:-3]
             
-            # Handle Next Move Request
-            if "reqNxtMove" in msg:
-                if move_index < len(moveSq):
-                    next_move = moveSq[move_index]
-                    move_index += 1
-                    response = f"nxtMove:{next_move}"
-                    bridge.send(response)
-                    print(f"[{timestamp}] 🤖 Request: reqNxtMove -> Sent: {response}")
-                else:
-                    print(f"[{timestamp}] 🤖 Request: reqNxtMove -> No more moves!")
+            # Handle Next Move Receipt Confirmation with value verification
+            if "nxtMoveRecived:" in msg:
+                try:
+                    # Parse the move value sent back by Arduino
+                    parts = msg.split(":")
+                    if len(parts) >= 2:
+                        received_move = int(parts[1].strip())
+                        
+                        if waiting_for_ack and received_move == current_pending_move:
+                            print(f"[{timestamp}] ✅ Confirmation received for move: {current_pending_move}")
+                            waiting_for_ack = False
+                            current_pending_move = None
+                        elif waiting_for_ack:
+                            print(f"[{timestamp}] ❌ Mismatch! Arduino has {received_move}, expected {current_pending_move}. Resending...")
+                        else:
+                            print(f"[{timestamp}] ℹ️ Arduino currently has move: {received_move} (ready for next)")
+                except (ValueError, IndexError):
+                    print(f"[{timestamp}] ⚠️ Malformed ACK received: {msg}")
                 continue
 
-            # Handle RFID or other messages
+            # Handle Next Move Request
+            if "reqNxtMove" in msg:
+                if waiting_for_ack:
+                    # Arduino is re-asking because it didn't get the last one or ACK was lost
+                    response = f"nxtMove:{current_pending_move}"
+                    bridge.send(response)
+                    print(f"[{timestamp}] 🤖 Request: reqNxtMove -> Re-sending Pending: {response}")
+                else:
+                    if move_index < len(moveSq):
+                        next_move = moveSq[move_index]
+                        move_index += 1
+                        current_pending_move = next_move
+                        waiting_for_ack = True
+                        response = f"nxtMove:{next_move}"
+                        bridge.send(response)
+                        print(f"[{timestamp}] 🤖 Request: reqNxtMove -> Sent New: {response}")
+                    else:
+                        print(f"[{timestamp}] 🤖 Request: reqNxtMove -> No more moves!")
+                continue
+
+            # Handle RFID messages
+            if msg.startswith("RFID:"):
+                uid = msg[5:].strip()
+                response = f"rfidAck:{uid}"
+                bridge.send(response)
+                print(f"[{timestamp}] 🏷️ RFID: {uid} -> ACK Sent: {response}")
+                continue
+
+            # Handle other messages
             print(f"[{timestamp}] HM10: {msg}")
 
         time.sleep(0.05)
