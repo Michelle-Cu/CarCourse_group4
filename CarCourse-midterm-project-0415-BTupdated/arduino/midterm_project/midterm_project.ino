@@ -264,7 +264,7 @@ void Search() {
     else if (Act == 21 && count <= 3 && millis() - step[2][1] > 700) { Act = 22; step[2][2] = millis(); }
 
     else if (currentMove == 4 && count >= 4 && Act == 1)  { Act = 41; step[4][1] = millis(); }
-    else if (Act == 41 && count <= 1 && millis() - step[4][1] > 3000) { Act = 42; step[4][2] = millis(); }
+    else if (Act == 41 && count <= 1 && millis() - step[4][1] > 700) { Act = 42; step[4][2] = millis(); }
 
     else if (currentMove == 1 && count >= 4 && Act == 1)  { Act = 11; step[1][1] = millis(); }
     else if (Act == 11 && count <= 1 && millis() - step[1][1] > 700) { Act = 12; step[1][2] = millis(); }
