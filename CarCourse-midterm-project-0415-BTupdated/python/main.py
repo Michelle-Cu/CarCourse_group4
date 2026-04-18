@@ -11,7 +11,7 @@ from maze import Action, Maze
 from score import ScoreboardServer, ScoreboardFake
 from pathlib import Path
 
-from hm10_esp32_bridge import HM10ESP32Bridge
+from bluetooth import setup_bluetooth
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
@@ -23,10 +23,8 @@ log = logging.getLogger(__name__)
 TEAM_NAME = "陽明山車神"
 SERVER_URL = "http://carcar.ntuee.org/scoreboard"
 MAZE_FILE = "data/cross.csv"
-BT_PORT = "" # remember to fill in!
-
-
-
+BT_PORT = "COM8" # remember to fill in!
+EXPECTED_NAME = "BT4"
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -40,23 +38,39 @@ def parse_args():
     return parser.parse_args()
 
 
-def main(mode: int, bt_port: str, team_name: str, server_url: str, maze_file: str):
-    # maze = Maze(maze_file)
+def main(mode: str, bt_port: str, team_name: str, server_url: str, maze_file: str):
     BASE = Path(__file__).resolve().parent
-    maze = Maze(str(BASE / "data" / "cross.csv"))
+    # Check if maze_file is a relative path to BASE/data or an absolute path
+    if os.path.exists(os.path.join(BASE, "data", maze_file)):
+        maze_path = str(BASE / "data" / maze_file)
+    elif os.path.exists(os.path.join(BASE, maze_file)):
+        maze_path = str(BASE / maze_file)
+    else:
+        maze_path = maze_file
+        
+    log.info(f"Loading maze from: {maze_path}")
+    maze = Maze(maze_path)
 
     # new code 
     if mode == "0":
         log.info("Mode 0: For treasure-hunting")
         # TODO
 
+        bridge = setup_bluetooth(bt_port, EXPECTED_NAME, log)
+        if bridge is None:
+            sys.exit(1)
+
         point = ScoreboardServer(team_name, server_url)
         print("Game Started.")
-        bridge = HM10ESP32Bridge(port=bt_port)
         
         current = maze.get_start_point()
         submitted = set()
         action_queue = []
+        waiting_for_ack = False
+        current_pending_batch = ""
+        
+        # Track car direction across multiple BFS calls
+        car_dir = None
 
         while True:
             messages = bridge.listen()
@@ -66,41 +80,87 @@ def main(mode: int, bt_port: str, team_name: str, server_url: str, maze_file: st
                     continue
                 
                 if msg == "reqFirstMove":
-                    log.info("Arduino restarted — resetting action queue")
+                    log.info("Arduino restarted — resetting action queue and exploration")
                     action_queue = []
+                    maze.explored = set()
                     current = maze.get_start_point()
-                    # then fall through to send first move
-                    if not action_queue:
+                    car_dir = None
+                    waiting_for_ack = False
+                    current_pending_batch = ""
+                    # then fall through to send first moves
+                    while len(action_queue) < 3:
                         path = maze.BFS(current)
                         if path is None:
-                            bridge.send("nxtMove:5")
-                            continue
-                        actions = maze.getActions(path)
-                        action_queue = list(actions)
+                            break
+                        
+                        if car_dir is None:
+                            car_dir = path[0].get_direction(path[1])
+                            
+                        actions_batch = []
+                        for i in range(len(path) - 1):
+                            action, car_dir = maze.getAction(car_dir, path[i], path[i+1])
+                            actions_batch.append(action)
+                            
+                        action_queue.extend(actions_batch)
                         current = path[-1]
-                    next_action = action_queue.pop(0)
-                    bridge.send(f"nxtMove:{int(next_action)}")
-                    log.info(f"Sent: nxtMove:{int(next_action)}")
+                    
+                    if not action_queue:
+                        bridge.send("nxtMove:5")
+                    else:
+                        moves_to_send = action_queue[:3]
+                        current_pending_batch = ",".join(map(str, [int(a) for a in moves_to_send]))
+                        waiting_for_ack = True
+                        bridge.send(f"nxtMove:{current_pending_batch}")
+                        log.info(f"Sent First Batch: nxtMove:{current_pending_batch}")
 
                 elif msg == "reqNxtMove":
-                    if not action_queue:
-                        path = maze.BFS(current)
-                        if path is None:
+                    if waiting_for_ack:
+                        # Re-send the pending batch
+                        bridge.send(f"nxtMove:{current_pending_batch}")
+                        log.info(f"Re-sent Pending Batch: nxtMove:{current_pending_batch}")
+                    else:
+                        while len(action_queue) < 3:
+                            path = maze.BFS(current)
+                            if path is None:
+                                break
+                            
+                            if car_dir is None:
+                                car_dir = path[0].get_direction(path[1])
+
+                            actions_batch = []
+                            for i in range(len(path) - 1):
+                                action, car_dir = maze.getAction(car_dir, path[i], path[i+1])
+                                actions_batch.append(action)
+
+                            action_queue.extend(actions_batch)
+                            current = path[-1]
+                            log.info(f"New path: {[n.get_index() for n in path]}")
+                            log.info(f"Actions in path: {maze.actions_to_str(actions_batch)}")
+                        
+                        if action_queue:
+                            moves_to_send = action_queue[:3]
+                            current_pending_batch = ",".join(map(str, [int(a) for a in moves_to_send]))
+                            waiting_for_ack = True
+                            bridge.send(f"nxtMove:{current_pending_batch}")
+                            log.info(f"Sent Batch: nxtMove:{current_pending_batch}")
+                        else:
                             bridge.send("nxtMove:5")
-                            log.info("Maze fully explored!")
-                            continue
-                        actions = maze.getActions(path)
-                        action_queue = list(actions)
-                        current = path[-1]
-                        log.info(f"New path: {[n.get_index() for n in path]}")
-                        log.info(f"Actions: {maze.actions_to_str(list(actions))}")
-                    next_action = action_queue.pop(0)
-                    bridge.send(f"nxtMove:{int(next_action)}")
-                    log.info(f"Sent: nxtMove:{int(next_action)}")
+                            log.info("Maze fully explored! Sending HALT.")
 
                 elif msg.startswith("nxtMoveRecived:"):
-                    # just log it, Arduino confirmed the move
-                    log.info(f"Arduino confirmed: {msg}")
+                    try:
+                        received_batch = msg.split(":")[1].strip()
+                        if waiting_for_ack and received_batch == current_pending_batch:
+                            log.info(f"✅ Confirmation received for batch: {current_pending_batch}")
+                            waiting_for_ack = False
+                            # car consumed one move from the previous sequence in its mind
+                            if action_queue:
+                                action_queue.pop(0)
+                        elif waiting_for_ack:
+                            log.warning(f"❌ Mismatch! Arduino has {received_batch}, expected {current_pending_batch}. Resending...")
+                            bridge.send(f"nxtMove:{current_pending_batch}")
+                    except (ValueError, IndexError):
+                        log.error(f"⚠️ Malformed ACK received: {msg}")
 
                 elif msg.startswith("RFID:"):
                     uid_str = msg[5:].upper()
@@ -109,6 +169,9 @@ def main(mode: int, bt_port: str, team_name: str, server_url: str, maze_file: st
                         print(f"Added {score} Points at {time_remaining} seconds left.")
                         submitted.add(uid_str)
                     bridge.send(f"rfidAck:{uid_str.lower()}")
+            
+            time.sleep(0.05)
+
 
     elif mode == "1":
         log.info("Mode 1: Self-testing mode.")

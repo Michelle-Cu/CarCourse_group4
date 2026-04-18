@@ -9,6 +9,14 @@
 /*if you have no idea how to start*/
 /*check out what you have learned from week 2*/
 
+/*=====Import variable=====*/
+extern bool BTConnected;
+extern bool movesStarted;
+extern int moveBuffer[3];
+extern int bufferCount;
+extern String pendingRFID;
+/*=====Import variable=====*/
+
 enum BT_CMD {
     NOTHING,
     FORWARD,    // 1
@@ -20,62 +28,114 @@ enum BT_CMD {
 
 };
 
-BT_CMD ask_BT() {
-    BT_CMD message = NOTHING;
-    char cmd;
+// NEW: Process Bluetooth commands and update buffer/state
+void process_BT() {
     if (Serial3.available()) {
-// TODO:
-// 1. get cmd from Serial3(bluetooth serial)
-// 2. link bluetooth message to your own command type
-        // read full "nxtMove:N" string
         static String inputBuffer = "";
         while (Serial3.available()) {
             char c = Serial3.read();
             if (c == '\n' || c == '\r') {
                 inputBuffer.trim();
-                if (inputBuffer.startsWith("nxtMove:")) {
-                    int move = inputBuffer.substring(8).toInt();
-                    if      (move == 1) message = FORWARD;
-                    else if (move == 2) message = TURN_LEFT;
-                    else if (move == 3) message = U_TURN;
-                    else if (move == 4) message = TURN_RIGHT;
-                    else if (move == 5) message = HALT;
-                    cmd = '0' + move; // for debug print below
+                if (inputBuffer.length() > 0) {
+                    // Ignore ESP32 internal status messages
+                    if (inputBuffer.indexOf("OK+") != -1 || inputBuffer.indexOf("ERROR+") != -1) {
+                        inputBuffer = "";
+                        continue; 
+                    }
+
+                    BTConnected = true;
+#ifdef DEBUG
+                    Serial.print("Remote Command: ");
+                    Serial.println(inputBuffer);
+#endif
+
+                    if (inputBuffer.startsWith("nxtMove:")) {
+                        String movePart = inputBuffer.substring(8);
+                        int count = 0;
+                        int start = 0;
+                        int commaIndex = movePart.indexOf(',');
+                        
+                        while (commaIndex != -1 && count < 3) {
+                            moveBuffer[count++] = movePart.substring(start, commaIndex).toInt();
+                            start = commaIndex + 1;
+                            commaIndex = movePart.indexOf(',', start);
+                        }
+                        if (count < 3) {
+                            moveBuffer[count++] = movePart.substring(start).toInt();
+                        }
+                        bufferCount = count;
+                        movesStarted = true;
+                        
+#ifdef DEBUG
+                        Serial.print("Buffer updated: ");
+                        for(int i=0; i<bufferCount; i++) {
+                            Serial.print(moveBuffer[i]);
+                            if(i < bufferCount-1) Serial.print(",");
+                        }
+                        Serial.println();
+#endif
+
+                        // acknowledge with the full current buffer
+                        Serial3.print("nxtMoveRecived:");
+                        for(int i=0; i<bufferCount; i++) {
+                            Serial3.print(moveBuffer[i]);
+                            if(i < bufferCount-1) Serial3.print(",");
+                        }
+                        Serial3.println();
+                    }
+
+                    if (inputBuffer.startsWith("rfidAck:")) {
+                        String ackUID = inputBuffer.substring(8);
+                        ackUID.trim();
+                        if (ackUID == pendingRFID) {
+#ifdef DEBUG
+                            Serial.print("RFID confirmed: ");
+                            Serial.println(pendingRFID);
+#endif
+                            pendingRFID = "";
+                        }
+                    }
                 }
                 inputBuffer = "";
             } else if (isPrintable(c)) {
                 inputBuffer += c;
             }
         }
-#ifdef DEBUG
-        Serial.print("cmd : ");
-        Serial.println(cmd);
-#endif
     }
+}
+
+// Bluetooth Helper Functions for initialization
+bool waitForResponse(const char* expected, unsigned long timeout) {
+    unsigned long start = millis();
+    Serial3.setTimeout(timeout);
+    String response = Serial3.readString();
+#ifdef DEBUG
+    if (response.length() > 0) {
+        Serial.print("HM10 Response: ");
+        Serial.println(response);
+    }
+#endif
+    return (response.indexOf(expected) != -1);
+}
+
+void sendATCommand(const char* command) {
+    Serial3.print(command);
+    waitForResponse("", 1000); 
+}
+
+BT_CMD ask_BT() {
+    BT_CMD message = NOTHING;
+    // (Legacy function kept for compatibility if needed elsewhere)
     return message;
 }  // ask_BT
 
-// send msg back through Serial1(bluetooth serial)
-// can use send_byte alternatively to send msg back
-// (but need to convert to byte type)
-void send_msg(const char& msg) {
-    // TODO:
-    Serial3.println(msg);
-}  // send_msg
-
-// send UID back through Serial3(bluetooth serial)
-void send_byte(byte* id, byte& idSize) {
-    for (byte i = 0; i < idSize; i++) {  // Send UID consequently.
-        Serial3.print(id[i]);
-    }
+// NEW: request next move from Python
+void request_next_move() {
+    Serial3.println("reqNxtMove");
 #ifdef DEBUG
-    Serial.print("Sent id: ");
-    for (byte i = 0; i < idSize; i++) {  // Show UID consequently.
-        Serial.print(id[i], HEX);
-    }
-    Serial.println();
+    Serial.println("Sent: reqNxtMove");
 #endif
-}  // send_byte
+}  // request_next_move
 
 // NEW: send RFID as "RFID:XXXXXXXX" string (matches what Python/ESP32 bridge expects)
 void send_rfid(byte* id, byte& idSize) {
@@ -89,11 +149,3 @@ void send_rfid(byte* id, byte& idSize) {
     Serial.println(rfidStr);
 #endif
 }  // send_rfid
-
-// NEW: request next move from Python
-void request_next_move() {
-    Serial3.println("reqNxtMove");
-#ifdef DEBUG
-    Serial.println("Sent: reqNxtMove");
-#endif
-}  // request_next_move

@@ -30,7 +30,7 @@
 #define SS_PIN 2                  // 晶片選擇腳位
 MFRC522 mfrc522(SS_PIN, RST_PIN);  // 建立MFRC522物件
 // BT
-#define CUSTOM_NAME "HM10_Mega" // Max length is 12 characters [1]
+#define CUSTOM_NAME "BT4" // Matches April4th_remote.ino
 
 // BT related global variables (updated)
 bool BTConnected = false;
@@ -38,7 +38,11 @@ bool movesStarted = false;
 String pendingRFID = "";
 unsigned long lastRfidTime = 0;
 unsigned long lastBtTime = 0;
-const unsigned long btCyclePeriod = 200;
+const unsigned long btCyclePeriod = 500;
+
+// HM-10 Robust Initialization variables
+long baudRates[] = {9600, 19200, 38400, 57600, 115200, 4800, 2400, 1200, 230400};
+bool moduleReady = false;
 
 /*=====Import header files=====*/
 #include "RFID.h"
@@ -49,22 +53,19 @@ const unsigned long btCyclePeriod = 200;
 
 /*===========================define pin & create module object================================*/
 // BlueTooth
-// BT connect to Serial1 (Hardware Serial)
-// Mega               HC05
+// BT connect to Serial3 (Hardware Serial)
+// Mega               HC05/HM10
 // Pin  (Function)    Pin
-// 18    TX       ->  RX
-// 19    RX       <-  TX
-// TB6612, 請按照自己車上的接線寫入腳位(左右不一定要跟註解寫的一樣)
-
+// 14    TX       ->  RX
+// 15    RX       <-  TX
+// Note: Serial3 on Mega uses pins 14 (TX) and 15 (RX)
 
 /*===========================define pin & create module object===========================*/
 
 /*============setup============*/
 void setup() {
-    // bluetooth initialization
-    Serial3.begin(9600);  
     // Serial window
-    Serial.begin(9600);
+    Serial.begin(115200);
     // RFID initial
     SPI.begin();
     mfrc522.PCD_Init();
@@ -81,11 +82,55 @@ void setup() {
     pinMode(IRpin_M, INPUT);
     pinMode(IRpin_R, INPUT);
     pinMode(IRpin_RR, INPUT);
-#ifdef DEBUG
-    Serial.println("Start!");
-#endif
 
-    // request_next_move();
+    // --- Robust HM-10 Initialization (from April4th_remote.ino) ---
+    Serial.println("\n--- HM-10 Robust Initialization ---");
+
+    for (int i = 0; i < 9; i++) {
+        Serial.print("Testing baud rate: ");
+        Serial.println(baudRates[i]);
+        
+        Serial3.begin(baudRates[i]);
+        Serial3.setTimeout(100);
+        delay(100);
+
+        Serial3.print("AT"); 
+        
+        if (waitForResponse("OK", 800)) {
+            Serial.println("HM-10 detected and ready.");
+            moduleReady = true;
+            break; 
+        } else {
+            Serial3.end();
+            delay(100);
+        }
+    }
+
+    if (moduleReady) {
+        Serial.println("Restoring factory defaults...");
+        sendATCommand("AT+RENEW"); 
+        delay(500);
+
+        Serial.print("Setting name to: ");
+        Serial.println(CUSTOM_NAME);
+        String nameCmd = "AT+NAME" + String(CUSTOM_NAME);
+        sendATCommand(nameCmd.c_str()); 
+        
+        Serial.println("Enabling notifications...");
+        sendATCommand("AT+NOTI1"); 
+
+        Serial.println("Restarting module...");
+        sendATCommand("AT+RESET"); 
+        delay(1000);
+        Serial3.begin(9600); 
+        Serial.println("--- HM-10 Ready at 9600 Baud ---\n");
+    } else {
+        Serial.println("CRITICAL ERROR: HM-10 not responding.");
+        Serial3.begin(9600); // Fallback
+    }
+
+    Serial.println("Start!");
+    Serial.println("Requesting first move...");
     Serial3.println("reqFirstMove");  // first move request for BT
 }
 /*============setup============*/
@@ -97,17 +142,11 @@ int _Tp = 150;                                // set your own value for motor po
 bool state = true;     // set state to false to halt the car, set state to true to activate the car
 BT_CMD _cmd = NOTHING;  // enum for bluetooth message, reference in bluetooth.h line 2
 
-
-// cross test
-int moveSequence[] = {1, 2, 3, 1, 3, 4, 3, 1, 5};
-int moveIndex = 0;
-int totalMoves = 9;
-int currentMove = moveSequence[0];
-//
-
 int Act = 1;          // current action state
+int moveBuffer[3] = {0, 0, 0}; 
+int bufferCount = 0;
+#define currentMove (bufferCount > 0 ? moveBuffer[0] : 0)
 
-// int currentMove = 0;  // current move command (1=forward, 2=left, 3=U-turn, 4=right)
 unsigned long step[5][5];  // timestamps for state machine
 int val[6];           // IR sensor readings
 
@@ -116,82 +155,56 @@ int val[6];           // IR sensor readings
 /*===========================declare function prototypes===========================*/
 void Search();    // search graph
 void SetState();  // switch the state
+void shiftBuffer();
 /*===========================declare function prototypes===========================*/
 
 /*===========================define function===========================*/
 void loop() {
     unsigned long currentMillis = millis();
 
-    if (!state)
+    if (!state || !BTConnected || bufferCount == 0)
         MotorWriting(0, 0);
     else
         Search();
     SetState();
 
-    // keep-alive: re-request move if idle every 200ms
+    // keep-alive: re-request moves if buffer is empty or low
     if (currentMillis - lastBtTime >= btCyclePeriod) {
         lastBtTime = currentMillis;
-        if (!BTConnected || currentMove == 0) {
-            if (!movesStarted) Serial3.println("reqFirstMove");
-            else Serial3.println("reqNxtMove");
+        
+        // Only request moves if NOT waiting for an RFID confirmation
+        if (!BTConnected || bufferCount < 3 || currentMove == 0) {
+            if (!movesStarted) {
+                Serial.println("Requesting first moves...");
+                Serial3.println("reqFirstMove");
+            } else {
+                Serial.println("Requesting next moves...");
+                Serial3.println("reqNxtMove");
+            }
         }
+#ifdef DEBUG
+        for (int i = 0; i < bufferCount; i++) {
+            Serial.print(moveBuffer[i]);
+            if (i < bufferCount - 1) Serial.print(",");
+        }
+        Serial.println();
+        Serial.println(Act);
+#endif
     }
 }
 
 void SetState() {
-    // TODO:
-    // 1. Get command from bluetooth
-    // 2. Change state if need
-
-    // Original code, probably won't need them anymore
-
-    // _cmd = ask_BT();
-    // if (_cmd == HALT) {
-    //     state = !state;
-    // }
-    // else if (_cmd != NOTHING) {
-    //     currentMove = (int)_cmd;  
-    // }
-
-    // end of original code
-
-    if (Serial3.available()) {
-        static String inputBuffer = "";
-        while (Serial3.available()) {
-            char c = Serial3.read();
-            if (c == '\n' || c == '\r') {
-                inputBuffer.trim();
-                if (inputBuffer.length() > 0) {
-                    BTConnected = true;
-
-                    if (inputBuffer.startsWith("nxtMove:")) {
-                        int next_val = inputBuffer.substring(8).toInt();
-                        if (currentMove == 0) {
-                            currentMove = next_val;
-                            movesStarted = true;
-                        }
-                        // send acknowledgment
-                        Serial3.print("nxtMoveRecived: ");
-                        Serial3.println(currentMove);
-                    }
-
-                    if (inputBuffer.startsWith("rfidAck:")) {
-                        String ackUID = inputBuffer.substring(8);
-                        ackUID.trim();
-                        if (ackUID == pendingRFID) {
-                            pendingRFID = "";  // confirmed received
-                        }
-                    }
-                }
-                inputBuffer = "";
-            } else if (isPrintable(c)) {
-                inputBuffer += c;
-            }
-        }
-    }
+    process_BT();
 }
 
-// Search() with hardcoded route, no BT signals required
+void shiftBuffer() {
+    if (bufferCount > 0) {
+        for (int i = 0; i < bufferCount - 1; i++) {
+            moveBuffer[i] = moveBuffer[i + 1];
+        }
+        bufferCount--;
+    }
+}
 
 void Search() {
     // 1. read IR sensors
@@ -204,37 +217,40 @@ void Search() {
     int count = 0;
     for (int i = 1; i < 6; i++) if (val[i] == HIGH) count++;
 
+    // --- Manual Override via Serial Monitor (New Section) ---
+    if (Serial.available()) {
+      int cnt = Serial.parseInt();
+      // Flush the remaining buffer (like \n or \r) so it doesn't trigger a 0 on the next loop
+      while(Serial.available() > 0) Serial.read(); 
+      
+      if (cnt >= 0 && cnt <= 5) {
+        count = cnt;
+        Serial.print(">>> Manual Override! count set to: ");
+        Serial.println(count);
+      }
+    }
+
     // 2. scan RFID
-
-    // original code for scanning RFID, can delete in the future
-//     byte idSize;
-//     byte* id = rfid(idSize);
-//     if (id != 0) {
-//         send_rfid(id, idSize);
-// #ifdef DEBUG
-//         Serial.println("RFID scanned!");
-// #endif
-//     }
-    // end of original code
-
-    // updated version of RFID scanning
     if (mfrc522.PICC_IsNewCardPresent() && mfrc522.PICC_ReadCardSerial()) {
-    String rfidStr = "";
+        String rfidStr = "";
         for (byte i = 0; i < mfrc522.uid.size; i++) {
-            if (mfrc522.uid.uidByte[i] < 0x10) rfidStr += "0";
-            rfidStr += String(mfrc522.uid.uidByte[i], HEX);
+        if (mfrc522.uid.uidByte[i] < 0x10) rfidStr += "0";
+        rfidStr += String(mfrc522.uid.uidByte[i], HEX);
         }
-        if (rfidStr != pendingRFID || (millis() - lastRfidTime > 2000)) {
-            pendingRFID = rfidStr;
-            lastRfidTime = millis();
-            Serial3.print("RFID:");
-            Serial3.println(pendingRFID);
-    #ifdef DEBUG
-            Serial.print("RFID scanned: ");
-            Serial.println(pendingRFID);
-    #endif
+    
+        // Only set as pending if it's a DIFFERENT card OR if 2 seconds have passed
+        if (rfidStr != pendingRFID) {
+        pendingRFID = rfidStr;
+#ifdef DEBUG
+        Serial.print("New RFID scanned: ");
+        Serial.println(pendingRFID);
+#endif
+        // Initial send
+        Serial3.print("RFID:");
+        Serial3.println(pendingRFID);
         }
-        mfrc522.PICC_HaltA();
+
+        mfrc522.PICC_HaltA(); 
         mfrc522.PCD_StopCrypto1();
     }
 
@@ -243,27 +259,26 @@ void Search() {
     else if (Act == 21 && count <= 3 && millis() - step[2][1] > 700) { Act = 22; step[2][2] = millis(); }
 
     else if (currentMove == 4 && count >= 4 && Act == 1)  { Act = 41; step[4][1] = millis(); }
-    else if (Act == 41 && count <= 1 && millis() - step[4][1] > 700) { Act = 42; step[4][2] = millis(); }
+    else if (Act = 41 && count <= 1 && millis() - step[4][1] > 700) { Act = 42; step[4][2] = millis(); }
 
     else if (currentMove == 1 && count >= 4 && Act == 1)  { Act = 11; step[1][1] = millis(); }
     else if (Act == 11 && count <= 1 && millis() - step[1][1] > 700) { Act = 12; step[1][2] = millis(); }
 
     else if (currentMove == 3 && count >= 4 && Act == 1)  { Act = 31; step[3][1] = millis(); }
-
     else if (Act == 31 && count <= 3 && millis() - step[3][1] > 400) { Act = 32; step[3][2] = millis();}
 
-    // finished → load next move from sequence
+    // finished turning → shift buffer, request next moves
     else if (Act == 22 && millis() - step[2][2] > 400 && count > 0 && count <= 3) {
-        Act = 1; loadNextMove();
+        Act = 1; shiftBuffer();
     }
     else if (Act == 42 && millis() - step[4][2] > 400 && count > 0 && count <= 3) {
-        Act = 1; loadNextMove();
+        Act = 1; shiftBuffer();
     }
     else if (Act == 32 && count > 0 && count <= 3) {
-        Act = 1; loadNextMove();
+        Act = 1; shiftBuffer();
     }
     else if (Act == 12 && count > 0 && count <= 3) {
-        Act = 1; loadNextMove();
+        Act = 1; shiftBuffer();
     }
 
     // 4. execute movement
@@ -271,87 +286,15 @@ void Search() {
     else if (Act == 42) right_turn(180, 150);
     else if (Act == 31) left_turn(150, 150);
     else if (Act == 32) left_turn(100, 100);
-    else tracking(val[1], val[2], val[3], val[4], val[5]);
-}
-
-void loadNextMove() {
-    moveIndex++;
-    if (moveIndex < totalMoves) {
-        currentMove = moveSequence[moveIndex];
-#ifdef DEBUG
-        Serial.print("Next move: ");
-        Serial.println(currentMove);
-#endif
-        if (currentMove == 5) {
-            state = false;  // HALT
-            MotorWriting(0, 0);
-#ifdef DEBUG
-            Serial.println("Done! Car halted.");
-#endif
-        }
-    } else {
+    else if (currentMove == 5) {
         state = false;
         MotorWriting(0, 0);
     }
+    else tracking(val[1], val[2], val[3], val[4], val[5]);
+// #ifdef DEBUG
+//     Serial.println(currentMove);
+// #endif
 }
 
 
-
-
-
-
-// Search() with bluetooth signals
-// void Search() {
-//     // TODO: let your car search graph(maze) according to bluetooth command from computer(python
-//     // code)
-
-//     // whole searching process
-
-//     // 1. read IR sensors
-//     val[1] = digitalRead(IRpin_LL);
-//     val[2] = digitalRead(IRpin_L);
-//     val[3] = digitalRead(IRpin_M);
-//     val[4] = digitalRead(IRpin_R);
-//     val[5] = digitalRead(IRpin_RR);
-
-//     int count = 0;
-//     for (int i = 1; i < 6; i++) if (val[i] == HIGH) count++;
-
-//     // 2. scan RFID
-//     byte idSize;
-//     byte* id = rfid(idSize);
-//     if (id != 0) {
-//         send_rfid(id, idSize);
-//     }
-
-//     // 3. get next move command from BT
-//     // removed because it's already called in SetState()
-    
-//     // 4. node detection state machine
-//     if      (currentMove == 2 && count >= 4 && Act == 1)  { Act = 21; step[2][1] = millis(); }  // left: reach node
-//     else if (Act == 21 && count <= 3 && millis() - step[2][1] > 500) { Act = 22; step[2][2] = millis(); }  // left: past node, turn
-
-//     else if (currentMove == 4 && count >= 4 && Act == 1)  { Act = 41; step[4][1] = millis(); }  // right: reach node
-//     else if (Act == 41 && count <= 1 && millis() - step[4][1] > 500) { Act = 42; step[4][2] = millis(); }  // right: past node, turn
-
-//     else if (currentMove == 1 && count >= 4 && Act == 1)  { Act = 11; step[1][1] = millis(); }  // forward: reach node
-//     else if (Act == 11 && count <= 1 && millis() - step[1][1] > 500) { Act = 12; step[1][2] = millis(); }  // forward: past node
-
-//     else if (currentMove == 3 && count >= 4 && Act == 1)  { Act = 31; step[3][1] = millis(); }  // U-turn: reach node
-//     else if (Act == 31 && millis() - step[3][1] > 700)    { Act = 32; step[3][2] = millis(); }  // U-turn: start turning
-
-//     // finished turning → back to tracking, request next move
-//     else if (Act == 22 && millis() - step[2][2] > 400 && count > 0 && count <= 3) { Act = 1; currentMove = 0; request_next_move(); }
-//     else if (Act == 42 && millis() - step[4][2] > 400 && count > 0 && count <= 3) { Act = 1; currentMove = 0; request_next_move(); }
-//     else if (Act == 32 && count > 0 && count <= 3) { Act = 1; currentMove = 0; request_next_move(); }
-//     else if (Act == 12 && count > 0 && count <= 3) { Act = 1; currentMove = 0; request_next_move(); }
-
-//     // 5. execute movement
-//     if      (Act == 22) left_turn(180, 120);
-//     else if (Act == 42) right_turn(180, 150);
-//     else if (Act == 31) left_turn(150, 150);   // U-turn first half
-//     else if (Act == 32) left_turn(100, 100);   // U-turn second half
-//     else tracking(val[1], val[2], val[3], val[4], val[5]);  // default: follow line
-
-// }
 /*===========================define function===========================*/
