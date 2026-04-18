@@ -16,9 +16,9 @@ log = logging.getLogger(__name__)
 
 class Action(IntEnum):
     ADVANCE = 1
-    U_TURN = 2
-    TURN_RIGHT = 3
-    TURN_LEFT = 4
+    TURN_LEFT = 2
+    U_TURN = 3
+    TURN_RIGHT = 4
     HALT = 5
 
 

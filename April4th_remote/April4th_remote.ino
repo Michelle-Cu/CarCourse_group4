@@ -55,7 +55,7 @@ double sumError = 0;
 double w2 = 1.0; 
 double w3 = 3.0;
 
-int Act = 1, currentMove = 0, pt;     // 1: keep going, 2: turn left, 3: U-turn, 4: turn right
+int Act = 1, currentMove = -1, pt;     // 1: keep going, 2: turn left, 3: U-turn, 4: turn right
 String pendingRFID = "";
 unsigned long lastRfidTime = 0;
 unsigned long step[5][5];
