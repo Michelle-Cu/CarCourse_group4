@@ -62,6 +62,32 @@ def main(mode: str, bt_port: str, team_name: str, server_url: str, maze_file: st
 
         point = ScoreboardServer(team_name, server_url)
         print("Game Started.")
+
+        # --- DEBUG: Print full BFS action sequence ---
+        debug_current = maze.get_start_point()
+        debug_actions = []
+        debug_car_dir = None
+        # Save actual exploration state
+        original_explored = maze.explored.copy()
+        maze.explored = set()
+        
+        while True:
+            p = maze.BFS(debug_current)
+            if p is None: break
+            
+            if debug_car_dir is None and len(p) >= 2:
+                debug_car_dir = p[0].get_direction(p[1])
+            
+            if len(p) >= 2:
+                for i in range(len(p) - 1):
+                    act, debug_car_dir = maze.getAction(debug_car_dir, p[i], p[i+1])
+                    debug_actions.append(int(act))
+            debug_current = p[-1]
+        
+        log.info(f"DEBUG: Full BFS Action Sequence: {debug_actions}")
+        # Restore actual exploration state
+        maze.explored = original_explored
+        # ---------------------------------
         
         current = maze.get_start_point()
         submitted = set()
@@ -87,22 +113,27 @@ def main(mode: str, bt_port: str, team_name: str, server_url: str, maze_file: st
                     car_dir = None
                     waiting_for_ack = False
                     current_pending_batch = ""
-                    # then fall through to send first moves
-                    while len(action_queue) < 3:
+                    # Gather at least 4 moves so after slicing 1 we still have 3
+                    while len(action_queue) < 4:
                         path = maze.BFS(current)
                         if path is None:
                             break
                         
-                        if car_dir is None:
+                        if car_dir is None and len(path) >= 2:
                             car_dir = path[0].get_direction(path[1])
                             
                         actions_batch = []
-                        for i in range(len(path) - 1):
-                            action, car_dir = maze.getAction(car_dir, path[i], path[i+1])
-                            actions_batch.append(action)
+                        if len(path) >= 2:
+                            for i in range(len(path) - 1):
+                                action, car_dir = maze.getAction(car_dir, path[i], path[i+1])
+                                actions_batch.append(action)
                             
                         action_queue.extend(actions_batch)
                         current = path[-1]
+                    
+                    if action_queue:
+                        popped = action_queue.pop(0)
+                        log.info(f"Slicing first move ({Action(popped).name}) as requested.")
                     
                     if not action_queue:
                         bridge.send("nxtMove:5")
@@ -124,13 +155,14 @@ def main(mode: str, bt_port: str, team_name: str, server_url: str, maze_file: st
                             if path is None:
                                 break
                             
-                            if car_dir is None:
+                            if car_dir is None and len(path) >= 2:
                                 car_dir = path[0].get_direction(path[1])
 
                             actions_batch = []
-                            for i in range(len(path) - 1):
-                                action, car_dir = maze.getAction(car_dir, path[i], path[i+1])
-                                actions_batch.append(action)
+                            if len(path) >= 2:
+                                for i in range(len(path) - 1):
+                                    action, car_dir = maze.getAction(car_dir, path[i], path[i+1])
+                                    actions_batch.append(action)
 
                             action_queue.extend(actions_batch)
                             current = path[-1]
@@ -153,14 +185,23 @@ def main(mode: str, bt_port: str, team_name: str, server_url: str, maze_file: st
                         if waiting_for_ack and received_batch == current_pending_batch:
                             log.info(f"✅ Confirmation received for batch: {current_pending_batch}")
                             waiting_for_ack = False
-                            # car consumed one move from the previous sequence in its mind
-                            if action_queue:
-                                action_queue.pop(0)
+                            # We NO LONGER pop here. We wait for "moveDone:"
                         elif waiting_for_ack:
                             log.warning(f"❌ Mismatch! Arduino has {received_batch}, expected {current_pending_batch}. Resending...")
                             bridge.send(f"nxtMove:{current_pending_batch}")
                     except (ValueError, IndexError):
                         log.error(f"⚠️ Malformed ACK received: {msg}")
+
+                elif msg.startswith("moveDone:"):
+                    try:
+                        finished_move = int(msg.split(":")[1].strip())
+                        if action_queue:
+                            popped = action_queue.pop(0)
+                            log.info(f"🚗 Move {finished_move} done. Popped {Action(popped).name} from queue. Remaining: {len(action_queue)}")
+                        else:
+                            log.warning(f"⚠️ Received moveDone:{finished_move} but action_queue is empty!")
+                    except (ValueError, IndexError):
+                        log.error(f"⚠️ Malformed moveDone received: {msg}")
 
                 elif msg.startswith("RFID:"):
                     uid_str = msg[5:].upper()

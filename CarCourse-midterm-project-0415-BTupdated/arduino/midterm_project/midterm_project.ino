@@ -172,8 +172,8 @@ void loop() {
     if (currentMillis - lastBtTime >= btCyclePeriod) {
         lastBtTime = currentMillis;
         
-        // Only request moves if NOT waiting for an RFID confirmation
-        if (!BTConnected || bufferCount < 3 || currentMove == 0) {
+        // Only request moves if buffer is empty
+        if (!BTConnected || bufferCount < 3) {
             if (!movesStarted) {
                 Serial.println("Requesting first moves...");
                 Serial3.println("reqFirstMove");
@@ -188,7 +188,7 @@ void loop() {
             if (i < bufferCount - 1) Serial.print(",");
         }
         Serial.println();
-        Serial.println(Act);
+        Serial.print("Act: "); Serial.print(Act); Serial.print(", currentMove: "); Serial.println(currentMove);
 #endif
     }
 }
@@ -199,10 +199,15 @@ void SetState() {
 
 void shiftBuffer() {
     if (bufferCount > 0) {
+        int finished = moveBuffer[0];
         for (int i = 0; i < bufferCount - 1; i++) {
             moveBuffer[i] = moveBuffer[i + 1];
         }
         bufferCount--;
+        
+        // Notify Python that the move is finished
+        Serial3.print("moveDone:");
+        Serial3.println(finished);
     }
 }
 
@@ -259,7 +264,7 @@ void Search() {
     else if (Act == 21 && count <= 3 && millis() - step[2][1] > 700) { Act = 22; step[2][2] = millis(); }
 
     else if (currentMove == 4 && count >= 4 && Act == 1)  { Act = 41; step[4][1] = millis(); }
-    else if (Act = 41 && count <= 1 && millis() - step[4][1] > 700) { Act = 42; step[4][2] = millis(); }
+    else if (Act == 41 && count <= 1 && millis() - step[4][1] > 3000) { Act = 42; step[4][2] = millis(); }
 
     else if (currentMove == 1 && count >= 4 && Act == 1)  { Act = 11; step[1][1] = millis(); }
     else if (Act == 11 && count <= 1 && millis() - step[1][1] > 700) { Act = 12; step[1][2] = millis(); }

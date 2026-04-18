@@ -94,7 +94,7 @@ class ScoreboardServer(Scoreboard):
         # create socket.io instance and connect to server
         self.socket = socketio.Client(logger=debug, engineio_logger=debug)
         self.socket.register_namespace(TeamNamespace("/team"))
-        self.socket.connect(self.ip, socketio_path="scoreboard.io")
+        self.socket.connect(self.ip, namespaces=["/team"], socketio_path="scoreboard.io")
         self.sid = self.socket.get_sid(namespace="/team")
 
         # start game
