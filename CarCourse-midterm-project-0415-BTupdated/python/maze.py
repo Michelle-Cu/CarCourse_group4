@@ -155,7 +155,7 @@ class Maze:
 
     def actions_to_str(self, actions):
         # cmds should be a string sequence like "fbrl....", use it as the input of BFS checklist #1
-        cmd = "fbrls"
+        cmd = "flbrs"
         cmds = ""
         for action in actions:
             cmds += cmd[action - 1]
