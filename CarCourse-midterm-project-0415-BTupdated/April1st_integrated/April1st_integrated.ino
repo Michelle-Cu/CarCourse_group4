@@ -12,8 +12,8 @@ int val[10];
 const int PWMA = 10;   // Speed Motor A
 const int AIN1 = 7;    // Direction A1
 const int AIN2 = 6;    // Direction A2
-const int BIN1 = 8;    // Direction B1
-const int BIN2 = 9;   // Direction B2
+const int BIN1 = 9;    // Direction B1
+const int BIN2 = 8;   // Direction B2
 const int PWMB = 11;    // Speed Motor B (Check if wired to Pin 5 or 4)
 
 // RFID MFRC522 (Mega Hardware SPI)
@@ -29,7 +29,7 @@ bool moduleReady = false;
 double Kp = 50.0; 
 double Kd = 0.0;
 double Ki = 0.0;
-int Tp = 150; // Base speed
+int Tp = 200; // Base speed
 
 // Memory for PID
 double lastError = 0;
@@ -44,11 +44,11 @@ int Act = 1, tp = 1, todo[1000];     //1 keep going,  2 turn left,  3 U-turn,  4
 unsigned long step[5][5], pMillis = 0;
 
 void setup() {
-  
-  for(int i=1; i<1000; ){
+  todo[1] = 4; todo[2] = 1;
+  for(int i=3; i<1000; ){
     //todo[i++] = 2;
-    todo[i++] = 1; todo[i++] = 3; 
-    todo[i++] = 2; todo[i++] = 3; todo[i++] = 4; todo[i++] = 3;
+    todo[i++] = 4; todo[i++] = 3; 
+    todo[i++] = 2; todo[i++] = 2; todo[i++] = 3; todo[i++] = 4;
   }
 
   Serial.begin(115200); 
@@ -162,10 +162,10 @@ void loop() {
   //int r = 150+ 40*( 1.5*val[4] + val[5]  - val[1] - 1.5*val[2] );
 
   if( todo[tp] == 2 && count >=4 && Act == 1 ) { Act = 21; step[2][1] = millis(); }                        //reach node
-  else if ( Act == 21 && count <= 3 && millis() - step[2][1] > 500 ) { Act = 22; step[2][2] = millis();          }//past node, turn
+  else if ( Act == 21 && count <= 3 && millis() - step[2][1] > 400 ) { Act = 22; step[2][2] = millis();          }//past node, turn
 
   else if( todo[tp] == 4 && count >=4 && Act == 1 ) { Act = 41; step[4][1] = millis(); }                        //reach node
-  else if ( Act == 41 && count <= 1 && millis() - step[4][1] > 500  ) { Act = 42; step[4][2] = millis();          }//past node, turn
+  else if ( Act == 41 && count <= 1 && millis() - step[4][1] > 300  ) { Act = 42; step[4][2] = millis();          }//past node, turn
 
   else if( todo[tp] == 1 && count >=4 && Act == 1 ) { Act = 11; step[1][1] = millis(); }                        //reach node
   else if ( Act == 11 && count <= 1 && millis() - step[1][1] > 500 ) { Act = 12; step[1][2] = millis(); }//past node, turn
@@ -174,10 +174,17 @@ void loop() {
   else if( Act == 31 && millis() - step[3][1] > 700) { Act = 32; step[3][2] = millis(); }     
   
 
-  else if( millis() - step[2][2] > 400 && Act == 22 && count > 0 && count <= 3) { //count <= 2 && (val[2] > 0 || val[3] > 0 || val[4] > 0 ) ) { 
+  else if( millis() - step[2][2] > 200 && Act == 22) { //count <= 2 && (val[2] > 0 || val[3] > 0 || val[4] > 0 ) ) { 
+      Act = 23; step[2][3] = millis();
+  }
+  else if( millis() - step[4][2] > 200 && Act == 42) { 
+      Act = 43; step[4][3] = millis();
+  }
+
+  else if( Act == 23 && count > 0 && count <= 3) { //count <= 2 && (val[2] > 0 || val[3] > 0 || val[4] > 0 ) ) { 
       Act = 1; tp++;  //found line
   }
-  else if( millis() - step[4][2] > 400 && Act == 42 && count > 0 && count <= 3 ) { 
+  else if( Act == 43 && count > 0 && count <= 3 ) { 
       Act = 1; tp++;  //found line
   }
   else if( Act == 32 && count > 0 && count <= 3 ) { 
@@ -186,12 +193,15 @@ void loop() {
   else if( Act == 12 && count > 0 && count <= 3 ) { 
       Act = 1; tp++;  //found line, finished step
   }
-  if(tp>500) tp = 1;
 
   
-  if( Act == 22 ) turnLeft( 180, 120 );
-  else if( Act == 42 ) turnRight( 180, 150 ); 
-  else if( Act == 31 ) turnLeft(150, 150);      //U turn 
+  if( Act == 22 ) turnLeft( 230, 150 );
+  else if( Act == 42 ) turnRight( 230, 150 );
+
+  else if( Act == 23 ) turnLeft( 150, 100 );
+  else if( Act == 43 ) turnRight( 150, 100 );
+   
+  else if( Act == 31 ) turnLeft(200, 200);      //U turn 
   else if( Act == 32) turnLeft(100 , 100);
   
   //else moveForward( r , l );       //Pick one

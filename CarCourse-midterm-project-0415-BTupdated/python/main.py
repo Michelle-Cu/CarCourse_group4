@@ -23,7 +23,7 @@ log = logging.getLogger(__name__)
 TEAM_NAME = "陽明山車神"
 SERVER_URL = "http://carcar.ntuee.org/scoreboard"
 MAZE_FILE = "data/cross.csv"
-BT_PORT = "COM8" # remember to fill in!
+BT_PORT = "COM5" # remember to fill in!
 EXPECTED_NAME = "BT4"
 
 def parse_args():

@@ -88,7 +88,7 @@ void setup() {
 
 /*===========================initialize variables===========================*/
 int l2 = 0, l1 = 0, m0 = 0, r1 = 0, r2 = 0;  // 紅外線模組的讀值(0->white,1->black)
-int _Tp = 150;                                // set your own value for motor power
+int _Tp = 180;                                // set your own value for motor power
 bool state = true;     // set state to false to halt the car, set state to true to activate the car
 BT_CMD _cmd = NOTHING;  // enum for bluetooth message, reference in bluetooth.h line 2
 
@@ -213,22 +213,28 @@ void Search() {
     // 3. node detection state machine
     if (currentMove == 5 && count >= 4 && Act == 1) state = false;
     else if (currentMove == 2 && count >= 4 && Act == 1)  { Act = 21; step[2][1] = millis(); }
-    else if (Act == 21 && count <= 3 && millis() - step[2][1] > 700) { Act = 22; step[2][2] = millis(); }
+    else if (Act == 21 && count <= 3 && millis() - step[2][1] > 400) { Act = 22; step[2][2] = millis(); }
 
     else if (currentMove == 4 && count >= 4 && Act == 1)  { Act = 41; step[4][1] = millis(); }
-    else if (Act == 41 && count <= 1 && millis() - step[4][1] > 700) { Act = 42; step[4][2] = millis(); }
+    else if (Act == 41 && count <= 1 && millis() - step[4][1] > 300) { Act = 42; step[4][2] = millis(); }
 
     else if (currentMove == 1 && count >= 4 && Act == 1)  { Act = 11; step[1][1] = millis(); }
-    else if (Act == 11 && count <= 1 && millis() - step[1][1] > 700) { Act = 12; step[1][2] = millis(); }
+    else if (Act == 11 && count <= 1 && millis() - step[1][1] > 500) { Act = 12; step[1][2] = millis(); }
 
     else if (currentMove == 3 && count >= 4 && Act == 1)  { Act = 31; step[3][1] = millis(); }
-    else if (Act == 31 && count <= 3 && millis() - step[3][1] > 400) { Act = 32; step[3][2] = millis();}
+    else if (Act == 31 && count <= 3 && millis() - step[3][1] > 700) { Act = 32; step[3][2] = millis();}
 
+    else if( millis() - step[2][2] > 200 && Act == 22) { //count <= 2 && (val[2] > 0 || val[3] > 0 || val[4] > 0 ) ) { 
+      Act = 23; step[2][3] = millis();
+    }
+    else if( millis() - step[4][2] > 200 && Act == 42) { 
+      Act = 43; step[4][3] = millis();
+    }
     // finished turning → shift buffer, request next moves
-    else if (Act == 22 && millis() - step[2][2] > 400 && count > 0 && count <= 3) {
+    else if (Act == 23 && count > 0 && count <= 3) {
         Act = 1; shiftBuffer(); 
     }
-    else if (Act == 42 && millis() - step[4][2] > 400 && count > 0 && count <= 3) {
+    else if (Act == 43 && count > 0 && count <= 3) {
         Act = 1; shiftBuffer(); 
     }
     else if (Act == 32 && count > 0 && count <= 3) {
@@ -238,11 +244,14 @@ void Search() {
         Act = 1; shiftBuffer(); 
     }
 
-    // 4. execute movement
-    if      (Act == 22) left_turn(180, 120);
-    else if (Act == 42) right_turn(180, 150);
-    else if (Act == 31) left_turn(150, 150);
-    else if (Act == 32) left_turn(100, 100);
+    if( Act == 22 ) turnLeft( 230, 150 );
+    else if( Act == 42 ) turnRight( 230, 150 );
+
+    else if( Act == 23 ) turnLeft( 150, 100 );
+    else if( Act == 43 ) turnRight( 150, 100 );
+   
+    else if( Act == 31 ) turnLeft(200, 200);      //U turn 
+    else if( Act == 32) turnLeft(100 , 100);
     else tracking(val[1], val[2], val[3], val[4], val[5]);
 // #ifdef DEBUG
 //     Serial.println(currentMove);
