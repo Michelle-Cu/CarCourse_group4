@@ -112,7 +112,7 @@ void shiftBuffer();
 void loop() {
     unsigned long currentMillis = millis();
 
-    if (!state || !BTConnected || bufferCount == 0)
+    if (!state || !BTConnected)
         MotorWriting(0, 0);
     else
         Search();
@@ -211,7 +211,8 @@ void Search() {
     }
 
     // 3. node detection state machine
-    if      (currentMove == 2 && count >= 4 && Act == 1)  { Act = 21; step[2][1] = millis(); }
+    if (currentMove == 5 && count >= 4 && Act == 1) state = false;
+    else if (currentMove == 2 && count >= 4 && Act == 1)  { Act = 21; step[2][1] = millis(); }
     else if (Act == 21 && count <= 3 && millis() - step[2][1] > 700) { Act = 22; step[2][2] = millis(); }
 
     else if (currentMove == 4 && count >= 4 && Act == 1)  { Act = 41; step[4][1] = millis(); }
@@ -242,10 +243,6 @@ void Search() {
     else if (Act == 42) right_turn(180, 150);
     else if (Act == 31) left_turn(150, 150);
     else if (Act == 32) left_turn(100, 100);
-    else if (currentMove == 5) {
-        state = false;
-        MotorWriting(0, 0);
-    }
     else tracking(val[1], val[2], val[3], val[4], val[5]);
 // #ifdef DEBUG
 //     Serial.println(currentMove);

@@ -117,6 +117,8 @@ def main(mode: str, bt_port: str, team_name: str, server_url: str, maze_file: st
                     while len(action_queue) < 4:
                         path = maze.BFS(current)
                         if path is None:
+                            if not action_queue or action_queue[-1] != Action.HALT:
+                                action_queue.append(Action.HALT)
                             break
                         
                         if car_dir is None and len(path) >= 2:
@@ -132,8 +134,11 @@ def main(mode: str, bt_port: str, team_name: str, server_url: str, maze_file: st
                         current = path[-1]
                     
                     if action_queue:
-                        popped = action_queue.pop(0)
-                        log.info(f"Slicing first move ({Action(popped).name}) as requested.")
+                        if action_queue[0] == Action.HALT:
+                             log.info("First move is HALT (already explored?)")
+                        else:
+                             popped = action_queue.pop(0)
+                             log.info(f"Slicing first move ({Action(popped).name}) as requested.")
                     
                     if not action_queue:
                         bridge.send("nxtMove:5")
@@ -153,6 +158,8 @@ def main(mode: str, bt_port: str, team_name: str, server_url: str, maze_file: st
                         while len(action_queue) < 3:
                             path = maze.BFS(current)
                             if path is None:
+                                if not action_queue or action_queue[-1] != Action.HALT:
+                                    action_queue.append(Action.HALT)
                                 break
                             
                             if car_dir is None and len(path) >= 2:
@@ -210,18 +217,138 @@ def main(mode: str, bt_port: str, team_name: str, server_url: str, maze_file: st
                         log.error(f"⚠️ Malformed moveDone received: {msg}")
 
                 elif msg.startswith("RFID:"):
-                    uid_str = msg[5:].upper()
-                    if uid_str not in submitted:
-                        score, time_remaining = point.add_UID(uid_str)
-                        print(f"Added {score} Points at {time_remaining} seconds left.")
-                        submitted.add(uid_str)
-                    bridge.send(f"rfidAck:{uid_str.lower()}")
+                    uid_str = msg[5:].strip().upper()
+                    # Basic validation: must be 8 hex characters
+                    if len(uid_str) == 8 and all(c in "0123456789ABCDEF" for c in uid_str):
+                        if uid_str not in submitted:
+                            score, time_remaining = point.add_UID(uid_str)
+                            print(f"Added {score} Points at {time_remaining} seconds left.")
+                            submitted.add(uid_str)
+                        bridge.send(f"rfidAck:{uid_str.lower()}")
+                    else:
+                        log.warning(f"⚠️ Received malformed RFID UID: '{uid_str}'")
             
             time.sleep(0.05)
 
 
     elif mode == "1":
-        log.info("Mode 1: Self-testing mode.")
+        log.info("Mode 1: Shortest path moving (BFS_2) with Mode 0 protocol.")
+
+        START_NODE = 1
+        END_NODE = 6 # Modify as needed
+
+        bridge = setup_bluetooth(bt_port, EXPECTED_NAME, log)
+        if bridge is None:
+            sys.exit(1)
+
+        point = ScoreboardServer(team_name, server_url)
+        
+        # Pre-calculate path
+        path = maze.BFS_2(maze.node_dict[START_NODE], maze.node_dict[END_NODE])
+        if path is None:
+            log.error(f"No path found between {START_NODE} and {END_NODE}")
+            sys.exit(1)
+        
+        log.info(f"Shortest path from {START_NODE} to {END_NODE}: {[n.get_index() for n in path]}")
+        actions, _ = maze.getActions(path)
+        original_action_queue = list(actions)
+        original_action_queue.append(Action.HALT)
+
+        submitted = set()
+        action_queue = list(original_action_queue)
+        waiting_for_ack = False
+        current_pending_batch = ""
+        game_started = False
+
+        while True:
+            messages = bridge.listen()
+            for msg in messages:
+                msg = msg.strip()
+                if not msg:
+                    continue
+                
+                if msg == "reqFirstMove":
+                    log.info("Arduino restarted — resetting shortest path action queue")
+                    action_queue = list(original_action_queue)
+                    waiting_for_ack = False
+                    current_pending_batch = ""
+                    
+                    if action_queue:
+                        if action_queue[0] == Action.HALT:
+                             log.info("First move is HALT (already at destination?)")
+                        else:
+                             popped = action_queue.pop(0)
+                             log.info(f"Slicing first move ({Action(popped).name}) as requested.")
+                    
+                    if not action_queue:
+                        bridge.send("nxtMove:5")
+                    else:
+                        moves_to_send = action_queue[:3]
+                        current_pending_batch = ",".join(map(str, [int(a) for a in moves_to_send]))
+                        waiting_for_ack = True
+                        bridge.send(f"nxtMove:{current_pending_batch}")
+                        log.info(f"Sent First Batch: nxtMove:{current_pending_batch}")
+
+                elif msg == "reqNxtMove":
+                    if waiting_for_ack:
+                        bridge.send(f"nxtMove:{current_pending_batch}")
+                        log.info(f"Re-sent Pending Batch: nxtMove:{current_pending_batch}")
+                    else:
+                        if action_queue:
+                            moves_to_send = action_queue[:3]
+                            current_pending_batch = ",".join(map(str, [int(a) for a in moves_to_send]))
+                            waiting_for_ack = True
+                            bridge.send(f"nxtMove:{current_pending_batch}")
+                            log.info(f"Sent Batch: nxtMove:{current_pending_batch}")
+                        else:
+                            bridge.send("nxtMove:5")
+                            log.info("Path complete! Sending HALT.")
+
+                elif msg.startswith("nxtMoveRecived:"):
+                    try:
+                        received_batch = msg.split(":")[1].strip()
+                        if waiting_for_ack and received_batch == current_pending_batch:
+                            log.info(f"✅ Confirmation received for batch: {current_pending_batch}")
+                            waiting_for_ack = False
+                            
+                            if not game_started:
+                                log.info("First batch confirmed. Starting game...")
+                                point.start_game()
+                                game_started = True
+                                print("Game Started.")
+                        elif waiting_for_ack:
+                            log.warning(f"❌ Mismatch! Arduino has {received_batch}, expected {current_pending_batch}. Resending...")
+                            bridge.send(f"nxtMove:{current_pending_batch}")
+                    except (ValueError, IndexError):
+                        log.error(f"⚠️ Malformed ACK received: {msg}")
+
+                elif msg.startswith("moveDone:"):
+                    try:
+                        finished_move = int(msg.split(":")[1].strip())
+                        if action_queue:
+                            popped = action_queue.pop(0)
+                            log.info(f"🚗 Move {finished_move} done. Popped {Action(popped).name} from queue. Remaining: {len(action_queue)}")
+                        else:
+                            log.warning(f"⚠️ Received moveDone:{finished_move} but action_queue is empty!")
+                    except (ValueError, IndexError):
+                        log.error(f"⚠️ Malformed moveDone received: {msg}")
+
+                elif msg.startswith("RFID:"):
+                    uid_str = msg[5:].strip().upper()
+                    if len(uid_str) == 8 and all(c in "0123456789ABCDEF" for c in uid_str):
+                        if uid_str not in submitted:
+                            score, time_remaining = point.add_UID(uid_str)
+                            print(f"Added {score} Points at {time_remaining} seconds left.")
+                            submitted.add(uid_str)
+                        bridge.send(f"rfidAck:{uid_str.lower()}")
+                    else:
+                        log.warning(f"⚠️ Received malformed RFID UID: '{uid_str}'")
+            
+            time.sleep(0.05)
+
+
+    elif mode == "2":
+        log.info("Mode 2: Self-testing mode (Original Template).")
 
         # ── uncomment ONE block at a time ──
 
@@ -328,6 +455,8 @@ def main(mode: str, bt_port: str, team_name: str, server_url: str, maze_file: st
         #             log.info(f"Node {node.get_index()}: got {score} pts")
         #     current = path[-1]
         # log.info(f"Total score: {point.get_current_score()}")
+
+    
 
     else:
         log.error("Invalid mode")

@@ -70,26 +70,35 @@ def main(mode: int, bt_port: str, team_name: str, server_url: str, maze_file: st
                     if not action_queue:
                         path = maze.BFS(current)
                         if path is None:
-                            bridge.send("nxtMove:5")  # fully explored, halt
-                            log.info("Maze fully explored!")
-                            continue
-                        actions = maze.getActions(path)
-                        action_queue = list(actions)
-                        current = path[-1]  # update current to end of path
-                        log.info(f"New path: {[n.get_index() for n in path]}")
-                        log.info(f"Actions: {maze.actions_to_str(list(actions))}")
+                            if not action_queue or action_queue[-1] != Action.HALT:
+                                action_queue.append(Action.HALT)
+                            log.info("Maze fully explored! Adding HALT to queue.")
+                        else:
+                            actions = maze.getActions(path)
+                            action_queue = list(actions)
+                            current = path[-1]  # update current to end of path
+                            log.info(f"New path: {[n.get_index() for n in path]}")
+                            log.info(f"Actions: {maze.actions_to_str(list(actions))}")
                     
-                    # pop next action from queue
-                    next_action = action_queue.pop(0)
-                    bridge.send(f"nxtMove:{int(next_action)}")
-                    log.info(f"Sent: nxtMove:{int(next_action)}")
+                    if action_queue:
+                        # pop next action from queue
+                        next_action = action_queue.pop(0)
+                        bridge.send(f"nxtMove:{int(next_action)}")
+                        log.info(f"Sent: nxtMove:{int(next_action)}")
+                    else:
+                        bridge.send("nxtMove:5")
+                        log.info("Sent: nxtMove:5 (Queue empty)")
 
                 elif msg.startswith("RFID:"):
-                    uid_str = msg[5:].upper()
-                    if uid_str not in submitted:
-                        score, time_remaining = point.add_UID(uid_str)
-                        print(f"Added {score} Points at {time_remaining} seconds left.")
-                        submitted.add(uid_str)
+                    uid_str = msg[5:].strip().upper()
+                    # Basic validation: must be 8 hex characters
+                    if len(uid_str) == 8 and all(c in "0123456789ABCDEF" for c in uid_str):
+                        if uid_str not in submitted:
+                            score, time_remaining = point.add_UID(uid_str)
+                            print(f"Added {score} Points at {time_remaining} seconds left.")
+                            submitted.add(uid_str)
+                    else:
+                        log.warning(f"⚠️ Received malformed RFID UID: '{uid_str}'")
 
     elif mode == "1":
         log.info("Mode 1: Self-testing mode.")
