@@ -243,7 +243,7 @@ def main(mode: str, bt_port: str, team_name: str, server_url: str, maze_file: st
         # END_NODE = 5
         # path = maze.BFS_2(maze.node_dict[START_NODE], maze.node_dict[END_NODE])
         # print(f"Path: {[n.get_index() for n in path]}")
-        # actions = maze.getActions(path)
+        # actions, car_dir = maze.getActions(path)
         # action_queue = list(actions)
         # log.info(f"Action sequence: {maze.actions_to_str(actions)}")
         
@@ -331,3 +331,53 @@ def main(mode: str, bt_port: str, team_name: str, server_url: str, maze_file: st
 if __name__ == "__main__":
     args = parse_args()
     main(**vars(args))
+
+
+
+# uncomment to test full map traversal (nodes visited and direction commands)
+
+# if __name__ == "__main__":
+#     m = Maze(str(Path(__file__).resolve().parent / "data" / "medium_maze.csv"))
+    
+#     current = m.get_start_point()
+#     all_nodes_visited = [m.get_start_point().get_index()]
+#     all_actions = []
+#     step = 1
+#     car_dir = None
+
+#     action_names = {1: "ADVANCE", 2: "TURN_LEFT", 3: "U_TURN", 4: "TURN_RIGHT", 5: "HALT"}
+
+#     print("=== Full Map Traversal Simulation ===\n")
+
+#     while True:
+#         path = m.BFS(current)
+#         if path is None:
+#             print("All dead-ends explored! Traversal complete.")
+#             break
+
+#         actions, car_dir = m.getActions(path, initial_dir=car_dir)
+#         action_str = m.actions_to_str(actions)
+#         action_nums = [int(a) for a in actions]
+
+#         print(f"--- Path {step} ---")
+#         print(f"Node path:    {' → '.join(str(n.get_index()) for n in path)}")
+#         print(f"Actions (str): {action_str}")           # e.g. "frf"
+#         print(f"Actions (num): {action_nums}")           # e.g. [1, 4, 1]
+#         print()
+
+#         for i, (node, action) in enumerate(zip(path, actions)):
+#             print(f"  Step {i+1}: at node {node.get_index()} → {action_names[int(action)]} ({int(action)})")
+#         print(f"  Step {len(path)}: arrive at node {path[-1].get_index()}")
+#         print()
+
+#         all_nodes_visited.extend(n.get_index() for n in path[1:])
+#         all_actions.extend(actions)
+#         # all_actions.append(Action.U_TURN)
+#         current = path[-1]
+#         step += 1
+
+#     print("=== Summary ===")
+#     print(f"Nodes visited:      {all_nodes_visited}")
+#     print(f"Full actions (str): {m.actions_to_str(all_actions)}")
+#     print(f"Full actions (num): {[int(a) for a in all_actions]}")
+#     print(f"Total steps:        {len(all_actions)}")

@@ -137,20 +137,21 @@ class Maze:
         return action, move_dir  # move_dir becomes the new car heading
         # return None
 
-    def getActions(self, nodes: List[Node]):
+    def getActions(self, nodes: List[Node], initial_dir=None):
         # TODO : given a sequence of nodes, return the corresponding action sequence
         # Tips : iterate through the nodes and use getAction() in each iteration
         if len(nodes) < 2:
             return []
         
+        # added initial_dir as the inital direction, use it if it's given
         actions = []
-        car_dir = nodes[0].get_direction(nodes[1])  # initial heading = direction of first move
+        car_dir = initial_dir if initial_dir else nodes[0].get_direction(nodes[1])  
         
         for i in range(len(nodes) - 1):
             action, car_dir = self.getAction(car_dir, nodes[i], nodes[i+1])
             actions.append(action)
         
-        return actions
+        return actions, car_dir
         # return None
 
     def actions_to_str(self, actions):
@@ -202,5 +203,5 @@ if __name__ == "__main__":
 
     # path 1→2→3→5→6
     path = [m.node_dict[1], m.node_dict[2], m.node_dict[3], m.node_dict[5], m.node_dict[6]]
-    actions = m.getActions(path)
+    actions, _ = m.getActions(path)
     print(m.actions_to_str(actions))  # should print "frfr" matching BFSchecklist result!
