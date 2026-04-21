@@ -16,6 +16,11 @@ class Scoreboard(abc.ABC):
     """
 
     @abc.abstractmethod
+    def start_game(self) -> None:
+        """Start the game on the scoreboard."""
+        pass
+
+    @abc.abstractmethod
     def add_UID(self, UID_str: str) -> Tuple[int, float]:
         """Send {UID_str} to server to update score. Returns (score, time_remaining)."""
         pass
@@ -40,6 +45,9 @@ class ScoreboardFake(Scoreboard):
         self._read_UID_file(filepath)
 
         self.visit_list = set()
+
+    def start_game(self):
+        log.info(f"Fake game started for {self.team}!")
 
     def _read_UID_file(self, filepath: str):
         self.uid_to_score = {}
@@ -94,21 +102,27 @@ class ScoreboardServer(Scoreboard):
         # create socket.io instance and connect to server
         self.socket = socketio.Client(logger=debug, engineio_logger=debug)
         self.socket.register_namespace(TeamNamespace("/team"))
-        self.socket.connect(self.ip, namespaces=["/team"], socketio_path="scoreboard.io")
-        self.sid = self.socket.get_sid(namespace="/team")
+        try:
+            self.socket.connect(self.ip, namespaces=["/team"], socketio_path="scoreboard.io", wait_timeout=10)
+            self.sid = self.socket.get_sid(namespace="/team")
+        except socketio.exceptions.ConnectionError as e:
+            log.error(f"Failed to connect to server: {e}")
+            self.sid = None
 
-        # start game
-        log.info("Game is starting.....")
-        self._start_game(self.teamname)
-
-    def _start_game(self, teamname: str):
-        payload = {"teamname": teamname}
-        res = self.socket.call("start_game", payload, namespace="/team")
-        log.info(res)
+    def start_game(self):
+        payload = {"teamname": self.teamname}
+        try:
+            res = self.socket.call("start_game", payload, namespace="/team", timeout=5)
+            log.info(res)
+        except Exception as e:
+            log.error(f"Error starting game: {e}")
 
     def add_UID(self, UID_str: str) -> Tuple[int, float]:
         """Send {UID_str} to server to update score. Returns nothing."""
         log.debug(f"Adding UID: {UID_str}")
+
+        if not self.socket.connected:
+            log.warning("Socket disconnected. Attempting to send UID anyway (may fail).")
 
         if not isinstance(UID_str, str):
             raise ValueError(f"UID format error! (expected: str) (got: {UID_str})")
@@ -118,16 +132,20 @@ class ScoreboardServer(Scoreboard):
                 f"UID format error! (expected: 8 hex digits) (got: {UID_str})"
             )
 
-        res = self.socket.call("add_UID", UID_str, namespace="/team")
-        if not res:
-            log.error("Failed to add UID")
+        try:
+            res = self.socket.call("add_UID", UID_str, namespace="/team", timeout=5)
+            if not res:
+                log.error("Failed to add UID (no response)")
+                return 0, 0
+            res = cast(dict, res)
+            message = res.get("message", "No message")
+            score = res.get("score", 0)
+            time_remaining = res.get("time_remaining", 0)
+            log.info(message)
+            return score, time_remaining
+        except Exception as e:
+            log.error(f"Socket call failed: {e}")
             return 0, 0
-        res = cast(dict, res)
-        message = res.get("message", "No message")
-        score = res.get("score", 0)
-        time_remaining = res.get("time_remaining", 0)
-        log.info(message)
-        return score, time_remaining
 
     def get_current_score(self) -> Optional[int]:
         try:

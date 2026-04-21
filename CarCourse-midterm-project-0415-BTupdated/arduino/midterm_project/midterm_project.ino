@@ -13,8 +13,8 @@
 #include <SPI.h>
 
 // TODO: 請將腳位寫入下方
-#define MotorR_I1 8     // 定義 A1 接腳（右）
-#define MotorR_I2 9     // 定義 A2 接腳（右）
+#define MotorR_I1 9     // 定義 A1 接腳（右）
+#define MotorR_I2 8     // 定義 A2 接腳（右）
 #define MotorR_PWMR 11  // 定義 ENA (PWM調速) 接腳
 #define MotorL_I3 7     // 定義 B1 接腳（左）
 #define MotorL_I4 6     // 定義 B2 接腳（左）
@@ -35,6 +35,7 @@ MFRC522 mfrc522(SS_PIN, RST_PIN);  // 建立MFRC522物件
 // BT related global variables (updated)
 bool BTConnected = false;
 bool movesStarted = false;
+bool movesReceived = false;
 String pendingRFID = "";
 unsigned long lastRfidTime = 0;
 unsigned long lastBtTime = 0;
@@ -66,68 +67,17 @@ bool moduleReady = false;
 void setup() {
     // Serial window
     Serial.begin(115200);
+    Serial3.begin(9600);
+    
     // RFID initial
     SPI.begin();
     mfrc522.PCD_Init();
-    // TB6612 pin
-    pinMode(MotorR_I1, OUTPUT);
-    pinMode(MotorR_I2, OUTPUT);
-    pinMode(MotorL_I3, OUTPUT);
-    pinMode(MotorL_I4, OUTPUT);
-    pinMode(MotorL_PWML, OUTPUT);
-    pinMode(MotorR_PWMR, OUTPUT);
-    // tracking pin
-    pinMode(IRpin_LL, INPUT);
-    pinMode(IRpin_L, INPUT);
-    pinMode(IRpin_M, INPUT);
-    pinMode(IRpin_R, INPUT);
-    pinMode(IRpin_RR, INPUT);
+    
+    // Motor & Sensor Pins
+    pinMode(MotorL_I3, OUTPUT); pinMode(MotorL_I4, OUTPUT); pinMode(MotorL_PWML, OUTPUT);
+    pinMode(MotorR_I1, OUTPUT); pinMode(MotorR_I2, OUTPUT); pinMode(MotorR_PWMR, OUTPUT);
+    pinMode(IRpin_LL, INPUT); pinMode(IRpin_L, INPUT); pinMode(IRpin_M, INPUT); pinMode(IRpin_R, INPUT); pinMode(IRpin_RR, INPUT);
 
-    // --- Robust HM-10 Initialization (from April4th_remote.ino) ---
-    Serial.println("\n--- HM-10 Robust Initialization ---");
-
-    for (int i = 0; i < 9; i++) {
-        Serial.print("Testing baud rate: ");
-        Serial.println(baudRates[i]);
-        
-        Serial3.begin(baudRates[i]);
-        Serial3.setTimeout(100);
-        delay(100);
-
-        Serial3.print("AT"); 
-        
-        if (waitForResponse("OK", 800)) {
-            Serial.println("HM-10 detected and ready.");
-            moduleReady = true;
-            break; 
-        } else {
-            Serial3.end();
-            delay(100);
-        }
-    }
-
-    if (moduleReady) {
-        Serial.println("Restoring factory defaults...");
-        sendATCommand("AT+RENEW"); 
-        delay(500);
-
-        Serial.print("Setting name to: ");
-        Serial.println(CUSTOM_NAME);
-        String nameCmd = "AT+NAME" + String(CUSTOM_NAME);
-        sendATCommand(nameCmd.c_str()); 
-        
-        Serial.println("Enabling notifications...");
-        sendATCommand("AT+NOTI1"); 
-
-        Serial.println("Restarting module...");
-        sendATCommand("AT+RESET"); 
-        delay(1000);
-        Serial3.begin(9600); 
-        Serial.println("--- HM-10 Ready at 9600 Baud ---\n");
-    } else {
-        Serial.println("CRITICAL ERROR: HM-10 not responding.");
-        Serial3.begin(9600); // Fallback
-    }
 
     Serial.println("Start!");
     Serial.println("Requesting first move...");
@@ -173,7 +123,7 @@ void loop() {
         lastBtTime = currentMillis;
         
         // Only request moves if buffer is empty
-        if (!BTConnected || bufferCount < 3) {
+        if (!BTConnected || bufferCount == 0 || !movesReceived) {
             if (!movesStarted) {
                 Serial.println("Requesting first moves...");
                 Serial3.println("reqFirstMove");
@@ -208,6 +158,7 @@ void shiftBuffer() {
         // Notify Python that the move is finished
         Serial3.print("moveDone:");
         Serial3.println(finished);
+        movesReceived = false;
     }
 }
 
@@ -274,16 +225,16 @@ void Search() {
 
     // finished turning → shift buffer, request next moves
     else if (Act == 22 && millis() - step[2][2] > 400 && count > 0 && count <= 3) {
-        Act = 1; shiftBuffer();
+        Act = 1; shiftBuffer(); 
     }
     else if (Act == 42 && millis() - step[4][2] > 400 && count > 0 && count <= 3) {
-        Act = 1; shiftBuffer();
+        Act = 1; shiftBuffer(); 
     }
     else if (Act == 32 && count > 0 && count <= 3) {
-        Act = 1; shiftBuffer();
+        Act = 1; shiftBuffer(); 
     }
     else if (Act == 12 && count > 0 && count <= 3) {
-        Act = 1; shiftBuffer();
+        Act = 1; shiftBuffer(); 
     }
 
     // 4. execute movement

@@ -61,7 +61,6 @@ def main(mode: str, bt_port: str, team_name: str, server_url: str, maze_file: st
             sys.exit(1)
 
         point = ScoreboardServer(team_name, server_url)
-        print("Game Started.")
 
         # --- DEBUG: Print full BFS action sequence ---
         debug_current = maze.get_start_point()
@@ -94,6 +93,7 @@ def main(mode: str, bt_port: str, team_name: str, server_url: str, maze_file: st
         action_queue = []
         waiting_for_ack = False
         current_pending_batch = ""
+        game_started = False
         
         # Track car direction across multiple BFS calls
         car_dir = None
@@ -186,6 +186,12 @@ def main(mode: str, bt_port: str, team_name: str, server_url: str, maze_file: st
                             log.info(f"✅ Confirmation received for batch: {current_pending_batch}")
                             waiting_for_ack = False
                             # We NO LONGER pop here. We wait for "moveDone:"
+                            
+                            if not game_started:
+                                log.info("First batch confirmed. Starting game on scoreboard server...")
+                                point.start_game()
+                                game_started = True
+                                print("Game Started.")
                         elif waiting_for_ack:
                             log.warning(f"❌ Mismatch! Arduino has {received_batch}, expected {current_pending_batch}. Resending...")
                             bridge.send(f"nxtMove:{current_pending_batch}")

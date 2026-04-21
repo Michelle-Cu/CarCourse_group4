@@ -59,6 +59,7 @@ unsigned long pMillis = 0;
 
 void setup() {
   Serial.begin(115200); 
+  delay(2000); // Give everything time to stabilize on battery power
   
   // Motor & Sensor Pins
   pinMode(PWMA, OUTPUT); pinMode(AIN1, OUTPUT); pinMode(AIN2, OUTPUT);
@@ -69,7 +70,7 @@ void setup() {
   mfrc522.PCD_Init();
 
   // --- Robust HM-10 Initialization (from mar30) ---
-  while (!Serial);
+  while (!Serial && millis() < 5000); // Wait for Serial but don't hang forever
   Serial.println("\n--- HM-10 Robust Initialization ---");
 
   for (int i = 0; i < 9; i++) {
@@ -77,18 +78,21 @@ void setup() {
     Serial.println(baudRates[i]);
     
     Serial3.begin(baudRates[i]);
-    Serial3.setTimeout(100);
-    delay(100);
+    Serial3.setTimeout(200);
+    
+    // Clear the buffer of any electrical noise "garbage"
+    while(Serial3.available()) Serial3.read(); 
+    delay(200);
 
     Serial3.print("AT"); 
     
-    if (waitForResponse("OK", 800)) {
+    if (waitForResponse("OK", 1000)) {
       Serial.println("HM-10 detected and ready.");
       moduleReady = true;
       break; 
     } else {
       Serial3.end();
-      delay(100);
+      delay(200);
     }
   }
 

@@ -82,6 +82,7 @@ void process_BT() {
                             if(i < bufferCount-1) Serial3.print(",");
                         }
                         Serial3.println();
+                        movesReceived = true;
                     }
 
                     if (inputBuffer.startsWith("rfidAck:")) {
