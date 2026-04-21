@@ -77,8 +77,8 @@ def find_best_target(start_node, treasures, new_values, maze):
         
         dist = get_road_distance(maze, start_node, t)
         if dist > 0 and dist != float('inf'):
-            ratio = new_values[t] / dist
-#            print(f"Target {t}: Ratio = {ratio:.2f} (P'={new_values[t]:.2f}, r={dist})")
+            ratio = new_values[t] / dist / dist
+            #            print(f"Target {t}: Ratio = {ratio:.2f} (P'={new_values[t]:.2f}, r={dist})")
             
             if ratio > max_ratio:
                 max_ratio = ratio

@@ -291,7 +291,7 @@ void loop() {
       }
     }
     // Only send count to keep bandwidth free for moves and RFID scans
-    Serial3.println(count);
+    // Serial3.println(count);
   }
 }
 

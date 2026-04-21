@@ -4,7 +4,7 @@ import sys
 import threading
 import datetime
 
-PORT = 'COM8'
+PORT = 'COM4'
 EXPECTED_NAME = 'BT4'
 
 # Globals for move sequence
