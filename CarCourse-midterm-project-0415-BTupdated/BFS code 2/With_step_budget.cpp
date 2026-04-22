@@ -30,13 +30,18 @@ map<int, NodeData> load_maze(const string& filename) {
         vector<string> row;
         while (getline(ss, word, ',')) row.push_back(word);
         
+        if (row.size() < 5) continue; // Ensure we have enough columns
+        
         int id = stoi(row[0]);
         NodeData data;
         data.id = id;
         
         vector<string> dirs = {"N", "S", "W", "E"};
         for (int i = 0; i < 4; ++i) {
-            if (!row[i + 1].empty()) data.neighbors[dirs[i]] = stoi(row[i + 1]);
+            // Check if string is not empty and not just whitespace
+            if (!row[i + 1].empty() && row[i+1].find_first_not_of(" \t\r\n") != string::npos) {
+                data.neighbors[dirs[i]] = stoi(row[i + 1]);
+            }
         }
         maze[id] = data;
     }
@@ -54,6 +59,8 @@ int get_road_distance(const map<int, NodeData>& maze, int start, int end) {
         auto [curr, dist] = q.front();
         q.pop();
         
+        if (maze.find(curr) == maze.end()) continue;
+
         for (auto const& [dir, neighbor] : maze.at(curr).neighbors) {
             if (neighbor == end) return dist + 1;
             if (!visited[neighbor]) {
@@ -65,16 +72,16 @@ int get_road_distance(const map<int, NodeData>& maze, int start, int end) {
     return numeric_limits<int>::max(); 
 }
 
-// Manhattan distance relative to the user's defined starting point
+// Fixed Manhattan distance calculation using (node-1) for 0-indexed grid
 double get_manhattan_value(int node, int start_node) {
-    int x = node % 6; 
-    int y = node / 6;
-    int x1 = start_node % 6; 
-    int y1 = start_node / 6;
+    int x = (node - 1) % 6; 
+    int y = (node - 1) / 6;
+    int x1 = (start_node - 1) % 6; 
+    int y1 = (start_node - 1) / 6;
     return 30.0 * (abs(x - x1) + abs(y - y1));
 }
 
-// Calculates P' = (Manhattan value) + sum(other_Manhattan / dist^2) for unvisited nodes
+// Calculates P' = (Manhattan value) + sum(other_Manhattan / dist^2)
 double get_dynamic_p_prime(int target_node, const vector<int>& treasures, 
                            const map<int, bool>& collected, 
                            const map<int, NodeData>& maze, int start_node) {
@@ -83,15 +90,15 @@ double get_dynamic_p_prime(int target_node, const vector<int>& treasures,
     double bonus = 0;
     
     for (int other : treasures) {
-        // Exclude self and already collected treasures
         if (target_node == other || (collected.count(other) && collected.at(other))) continue;
         
         int dist = get_road_distance(maze, target_node, other);
         if (dist > 0 && dist != numeric_limits<int>::max()) {
-            bonus += (get_manhattan_value(other, start_node) / (static_cast<double>(dist) * dist));
+            double other_val = get_manhattan_value(other, start_node);
+            bonus += (other_val / (static_cast<double>(dist) * dist));
         }
     }
-    return base + bonus;
+    return base + 5*bonus;
 }
 
 int main() {
@@ -103,6 +110,7 @@ int main() {
 
     vector<int> treasures;
     for (auto const& [id, data] : maze) {
+        // Treasure node logic: assume dead ends are nodes with only 1 neighbor
         if (data.neighbors.size() == 1) treasures.push_back(id);
     }
 
@@ -134,13 +142,15 @@ int main() {
             int dist = get_road_distance(maze, current_node, t);
             
             if (dist <= k && dist != numeric_limits<int>::max()) {
+                double base = get_manhattan_value(t, start_node);
                 double p_prime = get_dynamic_p_prime(t, treasures, collected, maze, start_node);
                 double ratio = p_prime / static_cast<double>(dist == 0 ? 1 : dist);
-                
+/*                
                 cout << "  > Target " << t << ": Dist=" << dist 
+                     << " | Base=" << base 
                      << " | P'=" << p_prime 
                      << " | Ratio=" << ratio << endl;
-                
+*/                
                 if (ratio > max_ratio) {
                     max_ratio = ratio;
                     best_node = t;
