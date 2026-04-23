@@ -28,7 +28,7 @@ EXPECTED_NAME = "BT4"
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("mode", help="0: treasure-hunting, 1: self-testing", type=str)
+    parser.add_argument("mode", help="0: treasure-hunting, 1: Shortest path moving, 2: self-testing, 3: planned-route", type=str)
     parser.add_argument("--maze-file", default=MAZE_FILE, help="Maze file", type=str)
     parser.add_argument("--bt-port", default=BT_PORT, help="Bluetooth port", type=str)
     parser.add_argument(
@@ -533,6 +533,148 @@ def main(mode: str, bt_port: str, team_name: str, server_url: str, maze_file: st
         # log.info(f"Total score: {point.get_current_score()}")
 
     
+
+    elif mode == "3":
+        log.info("Mode 3: Plan route mode — follow given node sequence.")
+
+        # ← define your node visit order here
+        NODE_SEQUENCE = [1, 7, 9, 12, 10]  # visit these nodes in order
+
+        bridge = setup_bluetooth(bt_port, EXPECTED_NAME, log)
+        if bridge is None:
+            sys.exit(1)
+
+        point = ScoreboardServer(team_name, server_url)
+
+        # precompute full action queue from node sequence
+        all_actions = []
+        car_dir = None
+        for i in range(len(NODE_SEQUENCE) - 1):
+            start = maze.node_dict[NODE_SEQUENCE[i]]
+            end   = maze.node_dict[NODE_SEQUENCE[i + 1]]
+            path  = maze.BFS_2(start, end)
+            if path is None:
+                log.error(f"No path from {NODE_SEQUENCE[i]} to {NODE_SEQUENCE[i+1]}!")
+                sys.exit(1)
+            actions, car_dir = maze.getActions(path, initial_dir=car_dir)
+            all_actions.extend(actions)
+            log.info(f"Segment {NODE_SEQUENCE[i]}→{NODE_SEQUENCE[i+1]}: {maze.actions_to_str(actions)}")
+
+        # pad with HALTs
+        all_actions.extend([Action.HALT, Action.HALT, Action.HALT])
+        log.info(f"Full sequence: {maze.actions_to_str(all_actions[:-3])}")
+        log.info(f"Full nums:     {[int(a) for a in all_actions[:-3]]}")
+
+        # same send/sync loop as mode 1
+        original_action_queue = list(all_actions)
+        action_queue = list(original_action_queue)
+        submitted = set()
+        game_started = False
+        moves_done_python = 0
+
+        # Trigger BTConnected on Arduino
+        bridge.send("check")
+
+        while True:
+            messages = bridge.listen()
+            for msg in messages:
+                msg = msg.strip()
+                if not msg:
+                    continue
+
+                # Robust Status Sync: S:done,m1,m2,m3
+                if msg.startswith("S:"):
+                    try:
+                        parts = msg[2:].split(",")
+                        if len(parts) < 4:
+                            # If it's the old S:done,count format (2 parts), we can still use it for done-sync
+                            if len(parts) == 2:
+                                arduino_done = int(parts[0])
+                                diff = arduino_done - moves_done_python
+                                if diff > 0:
+                                    for _ in range(diff):
+                                        if action_queue:
+                                            popped = action_queue.pop(0)
+                                            log.info(f"🚗 Status(old) confirm: Move done. Popped {Action(popped).name}.")
+                                    moves_done_python = arduino_done
+                            continue
+                            
+                        arduino_done = int(parts[0])
+                        arduino_moves = [int(x) for x in parts[1:4]] # m1, m2, m3
+
+                        # 1. Sync finished moves
+                        diff = arduino_done - moves_done_python
+                        if diff > 0:
+                            for _ in range(diff):
+                                if action_queue:
+                                    popped = action_queue.pop(0)
+                                    log.info(f"🚗 Status confirm: Move done. Popped {Action(popped).name}. Remaining: {len(action_queue)}")
+                            moves_done_python = arduino_done
+
+                        # 2. Verify buffer content and refill if low
+                        needs_resend = False
+                        arduino_count = 0
+                        for i in range(3):
+                            if i < len(action_queue):
+                                if arduino_moves[i] != int(action_queue[i]):
+                                    needs_resend = True
+                                if arduino_moves[i] != 0:
+                                    arduino_count += 1
+                            elif arduino_moves[i] != 0:
+                                needs_resend = True
+
+                        if needs_resend or arduino_count < 3:
+                            # Send moves starting from the absolute index matching the start of Python's queue
+                            if action_queue:
+                                start_idx = moves_done_python + 1
+                                moves_to_send = action_queue[:3]
+                                batch_str = ",".join(map(str, [int(a) for a in moves_to_send]))
+                                bridge.send(f"nxtMove:{start_idx},{batch_str}")
+                                log.info(f"Sent Sync/Fix Batch (Mode 3): nxtMove:{start_idx},{batch_str}")
+                        
+                        # 3. Handle game start prompt
+                        if not game_started and arduino_count > 0:
+                            print("\n" + "="*40)
+                            print("FIRST MOVES RECEIVED BY ARDUINO")
+                            print("Robot is ready and waiting.")
+                            print("="*40)
+                            input("Press Enter to START the planned route traversal... ")
+                            
+                            log.info("Starting game on scoreboard server and bot...")
+                            point.start_game()
+                            bridge.send("gameStart")
+                            game_started = True
+                            print("Game Started.")
+
+                    except (ValueError, IndexError) as e:
+                        log.error(f"⚠️ Malformed Status received: {msg} ({e})")
+
+                elif msg == "reqFirstMove":
+                    log.info("Arduino restarted — resetting planned route action queue")
+                    action_queue = list(original_action_queue)
+                    moves_done_python = 0
+                    
+                    if not action_queue:
+                        bridge.send("nxtMove:1,5")
+                    else:
+                        moves_to_send = action_queue[:3]
+                        current_pending_batch = ",".join(map(str, [int(a) for a in moves_to_send]))
+                        bridge.send(f"nxtMove:1,{current_pending_batch}")
+                        log.info(f"Sent First Batch: nxtMove:1,{current_pending_batch}")
+
+                elif msg.startswith("RFID:"):
+                    uid_str = msg[5:].strip().upper()
+                    if len(uid_str) == 8 and all(c in "0123456789ABCDEF" for c in uid_str):
+                        if uid_str not in submitted:
+                            score, time_remaining = point.add_UID(uid_str)
+                            print(f"Added {score} Points at {time_remaining} seconds left.")
+                            submitted.add(uid_str)
+                        bridge.send(f"rfidAck:{uid_str.lower()}")
+                    else:
+                        log.warning(f"⚠️ Received malformed RFID UID: '{uid_str}'. Requesting resend...")
+                        bridge.send("rfidResend")
+            
+            time.sleep(0.05)
 
     else:
         log.error("Invalid mode")

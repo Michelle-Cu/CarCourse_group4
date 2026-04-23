@@ -239,13 +239,13 @@ void Search() {
     // 3. node detection state machine
     if (currentMove == 5 && count >= 4 && Act == 1) state = false;
     else if (currentMove == 2 && count >= 4 && Act == 1)  { Act = 21; step[2][1] = millis(); }
-    else if (Act == 21 && count <= 3 && millis() - step[2][1] > 425) { Act = 22; step[2][2] = millis(); }
+    else if (Act == 21 && count <= 3 && millis() - step[2][1] > 435) { Act = 22; step[2][2] = millis(); }
 
     else if (currentMove == 4 && count >= 4 && Act == 1)  { Act = 41; step[4][1] = millis(); }
-    else if (Act == 41 && count <= 3 && millis() - step[4][1] > 425) { Act = 42; step[4][2] = millis(); }
+    else if (Act == 41 && count <= 3 && millis() - step[4][1] > 435) { Act = 42; step[4][2] = millis(); }
 
     else if (currentMove == 1 && count >= 4 && Act == 1)  { Act = 11; step[1][1] = millis(); }
-    else if (Act == 11 && count <= 1 && millis() - step[1][1] > 425) { Act = 12; step[1][2] = millis(); }
+    else if (Act == 11 && count <= 1 && millis() - step[1][1] > 435) { Act = 12; step[1][2] = millis(); }
 
     else if (currentMove == 3 && count >= 4 && Act == 1)  { Act = 31; step[3][1] = millis(); }
     else if (Act == 31 && count <= 3 && millis() - step[3][1] > 500) { Act = 32; step[3][2] = millis();}

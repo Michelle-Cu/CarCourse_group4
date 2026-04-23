@@ -537,7 +537,7 @@ def main(mode: str, bt_port: str, team_name: str, server_url: str, maze_file: st
         log.info("Mode 3: Plan route mode — follow given node sequence.")
 
         # ← define your node visit order here
-        NODE_SEQUENCE = [1, 9, 7, 12, 10]  # visit these nodes in order
+        NODE_SEQUENCE = [1, 7, 9, 12, 10]  # visit these nodes in order
 
         bridge = setup_bluetooth(bt_port, EXPECTED_NAME, log)
         if bridge is None:
