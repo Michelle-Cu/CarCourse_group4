@@ -9,9 +9,12 @@
 /*if you have no idea how to start*/
 /*check out what you have learned from week 2*/
 
+#define DEBUG
+
 /*=====Import variable=====*/
 extern bool BTConnected;
 extern bool movesStarted;
+extern bool movesReceived;
 extern bool gameStarted;
 extern int moveBuffer[3];
 extern int bufferCount;
@@ -56,61 +59,62 @@ void process_BT() {
                         gameStarted = true;
                         Serial.println("Game started from Python!");
                     }
-
-                    if (inputBuffer.startsWith("nxtMove:")) {
+                    else if (inputBuffer == "rfidResend") {
+                        if (pendingRFID != "") {
+                            Serial3.println("RFID:" + pendingRFID);
+#ifdef DEBUG
+                            Serial.println("Resending RFID on Python request: " + pendingRFID);
+#endif
+                        }
+                    }
+                    else if (inputBuffer.startsWith("nxtMove:")) {
                         String movePart = inputBuffer.substring(8);
                         int firstComma = movePart.indexOf(',');
-                        if (firstComma == -1) {
-                            inputBuffer = "";
-                            continue;
-                        }
-                        
-                        int startIdx = movePart.substring(0, firstComma).toInt();
-                        String movesOnly = movePart.substring(firstComma + 1);
-                        
-                        int tempMoves[3];
-                        int tempCount = 0;
-                        int start = 0;
-                        int commaIndex = movesOnly.indexOf(',');
-                        
-                        while (commaIndex != -1 && tempCount < 3) {
-                            tempMoves[tempCount++] = movesOnly.substring(start, commaIndex).toInt();
-                            start = commaIndex + 1;
-                            commaIndex = movesOnly.indexOf(',', start);
-                        }
-                        if (tempCount < 3 && start < movesOnly.length()) {
-                            tempMoves[tempCount++] = movesOnly.substring(start).toInt();
-                        }
-
-                        // Use absolute indexing to avoid duplicates or gaps
-                        int skip = nextAbsIdx - startIdx;
-                        for (int i = 0; i < tempCount; i++) {
-                            if (i >= skip && bufferCount < 3) {
-                                moveBuffer[bufferCount++] = tempMoves[i];
-                                nextAbsIdx++;
+                        if (firstComma != -1) {
+                            int startIdx = movePart.substring(0, firstComma).toInt();
+                            String movesOnly = movePart.substring(firstComma + 1);
+                            
+                            int tempMoves[3];
+                            int tempCount = 0;
+                            int start = 0;
+                            int commaIndex = movesOnly.indexOf(',');
+                            
+                            while (commaIndex != -1 && tempCount < 3) {
+                                tempMoves[tempCount++] = movesOnly.substring(start, commaIndex).toInt();
+                                start = commaIndex + 1;
+                                commaIndex = movesOnly.indexOf(',', start);
                             }
-                        }
-                        
-                        movesStarted = true;
-                        
+                            if (tempCount < 3 && start < movesOnly.length()) {
+                                tempMoves[tempCount++] = movesOnly.substring(start).toInt();
+                            }
+
+                            // Use absolute indexing to avoid duplicates or gaps
+                            for (int i = 0; i < tempCount; i++) {
+                                int absIdxOfMove = startIdx + i;
+                                // Only care about moves we haven't executed yet
+                                if (absIdxOfMove > executedMovesCount) {
+                                    int relIdx = absIdxOfMove - executedMovesCount - 1;
+                                    if (relIdx >= 0 && relIdx < 3) {
+                                        // If this is a new move for this slot, or we are filling a gap
+                                        if (moveBuffer[relIdx] == 0 || absIdxOfMove >= nextAbsIdx) {
+                                            moveBuffer[relIdx] = tempMoves[i];
+                                            // Update bufferCount to the highest filled index
+                                            if (relIdx + 1 > bufferCount) bufferCount = relIdx + 1;
+                                            // Update nextAbsIdx to the next index after the highest move we've received
+                                            if (absIdxOfMove + 1 > nextAbsIdx) nextAbsIdx = absIdxOfMove + 1;
+                                        }
+                                    }
+                                }
+                            }
+                            movesStarted = true;
+                            movesReceived = true;
 #ifdef DEBUG
-                        Serial.print("Buffer synced. nextAbsIdx: "); Serial.print(nextAbsIdx);
-                        Serial.print(", bufferCount: "); Serial.println(bufferCount);
+                            Serial.print("Buffer synced. nextAbsIdx: "); Serial.print(nextAbsIdx);
+                            Serial.print(", bufferCount: "); Serial.println(bufferCount);
 #endif
-
-                        // acknowledge with the full current buffer status
-                        Serial3.print("nxtMoveRecived:");
-                        Serial3.print(executedMovesCount);
-                        Serial3.print(",");
-                        for(int i=0; i<bufferCount; i++) {
-                            Serial3.print(moveBuffer[i]);
-                            if(i < bufferCount-1) Serial3.print(",");
                         }
-                        Serial3.println();
-                        movesReceived = true;
                     }
-
-                    if (inputBuffer.startsWith("rfidAck:")) {
+                    else if (inputBuffer.startsWith("rfidAck:")) {
                         String ackUID = inputBuffer.substring(8);
                         ackUID.trim();
                         if (ackUID == pendingRFID) {

@@ -101,19 +101,35 @@ def main(mode: str, bt_port: str, team_name: str, server_url: str, maze_file: st
         # Track car direction across multiple BFS calls
         car_dir = None
 
+        # Trigger BTConnected on Arduino
+        bridge.send("check")
+
         while True:
             messages = bridge.listen()
             for msg in messages:
                 msg = msg.strip()
                 if not msg:
                     continue
-                
+
                 # Robust Status Sync: S:done,m1,m2,m3
                 if msg.startswith("S:"):
                     try:
                         parts = msg[2:].split(",")
+                        if len(parts) < 4:
+                            # If it's the old S:done,count format (2 parts), we can still use it for done-sync
+                            if len(parts) == 2:
+                                arduino_done = int(parts[0])
+                                diff = arduino_done - moves_done_python
+                                if diff > 0:
+                                    for _ in range(diff):
+                                        if action_queue:
+                                            popped = action_queue.pop(0)
+                                            log.info(f"🚗 Status(old) confirm: Move done. Popped {Action(popped).name}.")
+                                    moves_done_python = arduino_done
+                            continue
+                            
                         arduino_done = int(parts[0])
-                        arduino_moves = [int(x) for x in parts[1:]] # m1, m2, m3
+                        arduino_moves = [int(x) for x in parts[1:4]] # m1, m2, m3
 
                         # 1. Sync finished moves
                         diff = arduino_done - moves_done_python
@@ -228,10 +244,6 @@ def main(mode: str, bt_port: str, team_name: str, server_url: str, maze_file: st
                     # but we keep it for backward compatibility if needed.
                     pass
 
-                elif msg.startswith("nxtMoveRecived:"):
-                    # Fast-path confirmation (optional but helpful)
-                    log.info(f"✅ Arduino ACK: {msg}")
-
                 elif msg.startswith("moveDone:"):
                     # Fast-path move completion
                     try:
@@ -253,7 +265,9 @@ def main(mode: str, bt_port: str, team_name: str, server_url: str, maze_file: st
                             submitted.add(uid_str)
                         bridge.send(f"rfidAck:{uid_str.lower()}")
                     else:
-                        log.warning(f"⚠️ Received malformed RFID UID: '{uid_str}'")
+                        log.warning(f"⚠️ Received malformed RFID UID: '{uid_str}'. Requesting resend...")
+                        bridge.send("rfidResend")
+                log.info(msg)
             
             time.sleep(0.05)
 
@@ -291,6 +305,9 @@ def main(mode: str, bt_port: str, team_name: str, server_url: str, maze_file: st
         # New synchronization variables
         moves_done_python = 0
 
+        # Trigger BTConnected on Arduino
+        bridge.send("check")
+
         while True:
             messages = bridge.listen()
             for msg in messages:
@@ -302,8 +319,21 @@ def main(mode: str, bt_port: str, team_name: str, server_url: str, maze_file: st
                 if msg.startswith("S:"):
                     try:
                         parts = msg[2:].split(",")
+                        if len(parts) < 4:
+                            # If it's the old S:done,count format (2 parts), we can still use it for done-sync
+                            if len(parts) == 2:
+                                arduino_done = int(parts[0])
+                                diff = arduino_done - moves_done_python
+                                if diff > 0:
+                                    for _ in range(diff):
+                                        if action_queue:
+                                            popped = action_queue.pop(0)
+                                            log.info(f"🚗 Status(old) confirm: Move done. Popped {Action(popped).name}.")
+                                    moves_done_python = arduino_done
+                            continue
+                            
                         arduino_done = int(parts[0])
-                        arduino_moves = [int(x) for x in parts[1:]] # m1, m2, m3
+                        arduino_moves = [int(x) for x in parts[1:4]] # m1, m2, m3
 
                         # 1. Sync finished moves
                         diff = arduino_done - moves_done_python
@@ -371,7 +401,7 @@ def main(mode: str, bt_port: str, team_name: str, server_url: str, maze_file: st
                     # Handled by status sync
                     pass
 
-                elif msg.startswith("nxtMoveRecived:"):
+                elif msg.startswith("nxtMoveReceived:"):
                     log.info(f"✅ Arduino ACK: {msg}")
 
                 elif msg.startswith("moveDone:"):
@@ -387,7 +417,8 @@ def main(mode: str, bt_port: str, team_name: str, server_url: str, maze_file: st
                             submitted.add(uid_str)
                         bridge.send(f"rfidAck:{uid_str.lower()}")
                     else:
-                        log.warning(f"⚠️ Received malformed RFID UID: '{uid_str}'")
+                        log.warning(f"⚠️ Received malformed RFID UID: '{uid_str}'. Requesting resend...")
+                        bridge.send("rfidResend")
             
             time.sleep(0.05)
 
@@ -561,12 +592,12 @@ if __name__ == "__main__":
 #     print(f"Full actions (str): {m.actions_to_str(all_actions)}")
 #     print(f"Full actions (num): {[int(a) for a in all_actions]}")
 #     print(f"Total steps:        {len(all_actions)}")
-            
-            time.sleep(0.05)
+        
+    # time.sleep(0.05)
 
 
-    elif mode == "2":
-        log.info("Mode 2: Self-testing mode (Original Template).")
+    # elif mode == "2":
+    #     log.info("Mode 2: Self-testing mode (Original Template).")
 
         # ── uncomment ONE block at a time ──
 
@@ -676,14 +707,14 @@ if __name__ == "__main__":
 
     
 
-    else:
-        log.error("Invalid mode")
-        sys.exit(1)
+#     else:
+#         log.error("Invalid mode")
+#         sys.exit(1)
 
 
-if __name__ == "__main__":
-    args = parse_args()
-    main(**vars(args))
+# if __name__ == "__main__":
+#     args = parse_args()
+#     main(**vars(args))
 
 
 

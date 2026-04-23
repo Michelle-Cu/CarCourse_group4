@@ -12,8 +12,8 @@ int val[10];
 const int PWMA = 10;   // Speed Motor A
 const int AIN1 = 7;    // Direction A1
 const int AIN2 = 6;    // Direction A2
-const int BIN1 = 8;    // Direction B1
-const int BIN2 = 9;   // Direction B2
+const int BIN1 = 9;    // Direction B1
+const int BIN2 = 8;   // Direction B2
 const int PWMB = 11;    // Speed Motor B (Check if wired to Pin 5 or 4)
 
 // RFID MFRC522 (Mega Hardware SPI)
@@ -47,8 +47,8 @@ void setup() {
   
   for(int i=1; i<1000; ){
     //todo[i++] = 2;
-    todo[i++] = 1; todo[i++] = 3; 
-    todo[i++] = 2; todo[i++] = 3; todo[i++] = 4; todo[i++] = 3;
+    todo[i++] = 4; todo[i++] = 4; 
+    todo[i++] = 3; todo[i++] = 4; todo[i++] = 4; todo[i++] = 4;
   }
 
   Serial.begin(115200); 

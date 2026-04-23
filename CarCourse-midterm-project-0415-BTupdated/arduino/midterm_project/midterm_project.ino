@@ -93,7 +93,7 @@ void setup() {
 
 /*===========================initialize variables===========================*/
 int l2 = 0, l1 = 0, m0 = 0, r1 = 0, r2 = 0;  // 紅外線模組的讀值(0->white,1->black)
-int _Tp = 240;                                // set your own value for motor power
+int _Tp = 150;                                // set your own value for motor power
 bool state = true;     // set state to false to halt the car, set state to true to activate the car
 BT_CMD _cmd = NOTHING;  // enum for bluetooth message, reference in bluetooth.h line 2
 
@@ -128,21 +128,26 @@ void loop() {
         lastBtTime = currentMillis;
         
         if (BTConnected) {
-            Serial3.print("S:");
-            Serial3.print(executedMovesCount);
-            Serial3.print(",");
-            Serial3.print(moveBuffer[0]);
-            Serial3.print(",");
-            Serial3.print(moveBuffer[1]);
-            Serial3.print(",");
-            Serial3.println(moveBuffer[2]);
+            String statusMsg = "S:" + String(executedMovesCount) + "," + 
+                               String(moveBuffer[0]) + "," + String(moveBuffer[1]) + "," + 
+                               String(moveBuffer[2]);
+            Serial3.println(statusMsg);
+        } else {
+            // Deadlock prevention: send a request every 2s until Python answers
+            static unsigned long lastReqTime = 0;
+            if (currentMillis - lastReqTime >= 2000) {
+                lastReqTime = currentMillis;
+                Serial3.println("reqFirstMove");
+#ifdef DEBUG
+                Serial.println("Deadlock prevention: Sent reqFirstMove");
+#endif
+            }
         }
 
         // Resend RFID if it hasn't been acknowledged
-        if (pendingRFID != "" && currentMillis - lastRfidTime >= 1000) {
+        if (pendingRFID != "" && currentMillis - lastRfidTime >= 1500) {
             lastRfidTime = currentMillis;
-            Serial3.print("RFID:");
-            Serial3.println(pendingRFID);
+            Serial3.println("RFID:" + pendingRFID);
 #ifdef DEBUG
             Serial.print("Resending RFID: ");
             Serial.println(pendingRFID);
@@ -223,9 +228,8 @@ void Search() {
             Serial.print("New RFID scanned: ");
             Serial.println(pendingRFID);
 #endif
-            // Initial send
-            Serial3.print("RFID:");
-            Serial3.println(pendingRFID);
+            // Initial send (Consolidated)
+            Serial3.println("RFID:" + pendingRFID);
         }
 
         mfrc522.PICC_HaltA(); 
@@ -234,17 +238,17 @@ void Search() {
 
     // 3. node detection state machine
     if (currentMove == 5 && count >= 4 && Act == 1) state = false;
-    else if (currentMove == 2 && count >= 3 && Act == 1)  { Act = 21; step[2][1] = millis(); }
-    else if (Act == 21 && count <= 3 && millis() - step[2][1] > 400) { Act = 22; step[2][2] = millis(); }
+    else if (currentMove == 2 && count >= 4 && Act == 1)  { Act = 21; step[2][1] = millis(); }
+    else if (Act == 21 && count <= 3 && millis() - step[2][1] > 500) { Act = 22; step[2][2] = millis(); }
 
-    else if (currentMove == 4 && count >= 3 && Act == 1)  { Act = 41; step[4][1] = millis(); }
-    else if (Act == 41 && count <= 1 && millis() - step[4][1] > 300) { Act = 42; step[4][2] = millis(); }
+    else if (currentMove == 4 && count >= 4 && Act == 1)  { Act = 41; step[4][1] = millis(); }
+    else if (Act == 41 && count <= 3 && millis() - step[4][1] > 500) { Act = 42; step[4][2] = millis(); }
 
-    else if (currentMove == 1 && count >= 3 && Act == 1)  { Act = 11; step[1][1] = millis(); }
-    else if (Act == 11 && count <= 1 && millis() - step[1][1] > 350) { Act = 12; step[1][2] = millis(); }
+    else if (currentMove == 1 && count >= 4 && Act == 1)  { Act = 11; step[1][1] = millis(); }
+    else if (Act == 11 && count <= 1 && millis() - step[1][1] > 500) { Act = 12; step[1][2] = millis(); }
 
-    else if (currentMove == 3 && count >= 3 && Act == 1)  { Act = 31; step[3][1] = millis(); }
-    else if (Act == 31 && count <= 3 && millis() - step[3][1] > 500) { Act = 32; step[3][2] = millis();}
+    else if (currentMove == 3 && count >= 4 && Act == 1)  { Act = 31; step[3][1] = millis(); }
+    else if (Act == 31 && count <= 3 && millis() - step[3][1] > 700) { Act = 32; step[3][2] = millis();}
 
     else if( millis() - step[2][2] > 200 && Act == 22) { //count <= 2 && (val[2] > 0 || val[3] > 0 || val[4] > 0 ) ) { 
       Act = 23; step[2][3] = millis();
