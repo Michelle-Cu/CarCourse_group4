@@ -12,9 +12,12 @@
 /*=====Import variable=====*/
 extern bool BTConnected;
 extern bool movesStarted;
+extern bool gameStarted;
 extern int moveBuffer[3];
 extern int bufferCount;
 extern String pendingRFID;
+extern int executedMovesCount;
+extern int nextAbsIdx;
 /*=====Import variable=====*/
 
 enum BT_CMD {
@@ -49,34 +52,56 @@ void process_BT() {
                     Serial.println(inputBuffer);
 #endif
 
+                    if (inputBuffer == "gameStart") {
+                        gameStarted = true;
+                        Serial.println("Game started from Python!");
+                    }
+
                     if (inputBuffer.startsWith("nxtMove:")) {
                         String movePart = inputBuffer.substring(8);
-                        int count = 0;
-                        int start = 0;
-                        int commaIndex = movePart.indexOf(',');
+                        int firstComma = movePart.indexOf(',');
+                        if (firstComma == -1) {
+                            inputBuffer = "";
+                            continue;
+                        }
                         
-                        while (commaIndex != -1 && count < 3) {
-                            moveBuffer[count++] = movePart.substring(start, commaIndex).toInt();
+                        int startIdx = movePart.substring(0, firstComma).toInt();
+                        String movesOnly = movePart.substring(firstComma + 1);
+                        
+                        int tempMoves[3];
+                        int tempCount = 0;
+                        int start = 0;
+                        int commaIndex = movesOnly.indexOf(',');
+                        
+                        while (commaIndex != -1 && tempCount < 3) {
+                            tempMoves[tempCount++] = movesOnly.substring(start, commaIndex).toInt();
                             start = commaIndex + 1;
-                            commaIndex = movePart.indexOf(',', start);
+                            commaIndex = movesOnly.indexOf(',', start);
                         }
-                        if (count < 3) {
-                            moveBuffer[count++] = movePart.substring(start).toInt();
+                        if (tempCount < 3 && start < movesOnly.length()) {
+                            tempMoves[tempCount++] = movesOnly.substring(start).toInt();
                         }
-                        bufferCount = count;
+
+                        // Use absolute indexing to avoid duplicates or gaps
+                        int skip = nextAbsIdx - startIdx;
+                        for (int i = 0; i < tempCount; i++) {
+                            if (i >= skip && bufferCount < 3) {
+                                moveBuffer[bufferCount++] = tempMoves[i];
+                                nextAbsIdx++;
+                            }
+                        }
+                        
                         movesStarted = true;
                         
 #ifdef DEBUG
-                        Serial.print("Buffer updated: ");
-                        for(int i=0; i<bufferCount; i++) {
-                            Serial.print(moveBuffer[i]);
-                            if(i < bufferCount-1) Serial.print(",");
-                        }
-                        Serial.println();
+                        Serial.print("Buffer synced. nextAbsIdx: "); Serial.print(nextAbsIdx);
+                        Serial.print(", bufferCount: "); Serial.println(bufferCount);
 #endif
 
-                        // acknowledge with the full current buffer
+                        // acknowledge with the full current buffer status
                         Serial3.print("nxtMoveRecived:");
+                        Serial3.print(executedMovesCount);
+                        Serial3.print(",");
                         for(int i=0; i<bufferCount; i++) {
                             Serial3.print(moveBuffer[i]);
                             if(i < bufferCount-1) Serial3.print(",");
