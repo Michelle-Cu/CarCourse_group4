@@ -9,7 +9,7 @@
 /*if you have no idea how to start*/
 /*check out what you have learned from week 2*/
 
-#define DEBUG
+// #define DEBUG
 
 /*=====Import variable=====*/
 extern bool BTConnected;

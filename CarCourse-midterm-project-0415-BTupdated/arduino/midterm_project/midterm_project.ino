@@ -6,7 +6,7 @@
 // Modify     [2020/03/27 Erik Kuo]
 /***************************************************************************/
 
-#define DEBUG  // debug flag
+// #define DEBUG  // debug flag
 
 // for RFID
 #include <MFRC522.h>
@@ -40,7 +40,7 @@ bool gameStarted = false;
 String pendingRFID = "";
 unsigned long long lastRfidTime = 0;
 unsigned long long lastBtTime = 0;
-const unsigned long btCyclePeriod = 500;
+const unsigned long btCyclePeriod = 750;
 
 // New global variables for indexing
 int executedMovesCount = 0;
@@ -93,7 +93,7 @@ void setup() {
 
 /*===========================initialize variables===========================*/
 int l2 = 0, l1 = 0, m0 = 0, r1 = 0, r2 = 0;  // 紅外線模組的讀值(0->white,1->black)
-int _Tp = 255;                                // set your own value for motor power
+int _Tp = 240;                                // set your own value for motor power
 bool state = true;     // set state to false to halt the car, set state to true to activate the car
 BT_CMD _cmd = NOTHING;  // enum for bluetooth message, reference in bluetooth.h line 2
 
@@ -135,7 +135,7 @@ void loop() {
         } else {
             // Deadlock prevention: send a request every 2s until Python answers
             static unsigned long lastReqTime = 0;
-            if (currentMillis - lastReqTime >= 2000) {
+            if (currentMillis - lastReqTime >= 3000) {
                 lastReqTime = currentMillis;
                 Serial3.println("reqFirstMove");
 #ifdef DEBUG
@@ -145,7 +145,7 @@ void loop() {
         }
 
         // Resend RFID if it hasn't been acknowledged
-        if (pendingRFID != "" && currentMillis - lastRfidTime >= 500) {
+        if (pendingRFID != "" && currentMillis - lastRfidTime >= 750) {
             lastRfidTime = currentMillis;
             Serial3.println("RFID:" + pendingRFID);
 #ifdef DEBUG
@@ -239,21 +239,21 @@ void Search() {
     // 3. node detection state machine
     if (currentMove == 5 && count >= 4 && Act == 1) state = false;
     else if (currentMove == 2 && count >= 4 && Act == 1)  { Act = 21; step[2][1] = millis(); }
-    else if (Act == 21 && count <= 3 && millis() - step[2][1] > 435) { Act = 22; step[2][2] = millis(); }
+    else if (Act == 21 && count <= 5 && millis() - step[2][1] > 450) { Act = 22; step[2][2] = millis(); }
 
     else if (currentMove == 4 && count >= 4 && Act == 1)  { Act = 41; step[4][1] = millis(); }
-    else if (Act == 41 && count <= 3 && millis() - step[4][1] > 435) { Act = 42; step[4][2] = millis(); }
+    else if (Act == 41 && count <= 5 && millis() - step[4][1] > 450) { Act = 42; step[4][2] = millis(); }
 
     else if (currentMove == 1 && count >= 4 && Act == 1)  { Act = 11; step[1][1] = millis(); }
-    else if (Act == 11 && count <= 1 && millis() - step[1][1] > 435) { Act = 12; step[1][2] = millis(); }
+    else if (Act == 11 && count <= 5 && millis() - step[1][1] > 450) { Act = 12; step[1][2] = millis(); }
 
     else if (currentMove == 3 && count >= 4 && Act == 1)  { Act = 31; step[3][1] = millis(); }
-    else if (Act == 31 && count <= 3 && millis() - step[3][1] > 500) { Act = 32; step[3][2] = millis();}
+    else if (Act == 31 && count <= 5 && millis() - step[3][1] > 500) { Act = 32; step[3][2] = millis();}
 
-    else if( millis() - step[2][2] > 200 && Act == 22) { //count <= 2 && (val[2] > 0 || val[3] > 0 || val[4] > 0 ) ) { 
+    else if( millis() - step[2][2] > 300 && Act == 22) { //count <= 2 && (val[2] > 0 || val[3] > 0 || val[4] > 0 ) ) { 
       Act = 23; step[2][3] = millis();
     }
-    else if( millis() - step[4][2] > 200 && Act == 42) { 
+    else if( millis() - step[4][2] > 300 && Act == 42) { 
       Act = 43; step[4][3] = millis();
     }
     // finished turning → shift buffer, request next moves
@@ -270,13 +270,13 @@ void Search() {
         Act = 1; shiftBuffer(); 
     }
 
-    if( Act == 22 ) MotorWriting( -230, 230 );
-    else if( Act == 42 ) MotorWriting( 230, -230 );
+    if( Act == 22 ) MotorWriting( -200, 200 );
+    else if( Act == 42 ) MotorWriting( 200, -200 );
 
     else if( Act == 23 ) MotorWriting( -150, 150 );
     else if( Act == 43 ) MotorWriting( 150, -150 );
    
-    else if( Act == 31 ) MotorWriting(-230, 230);      //U turn 
+    else if( Act == 31 ) MotorWriting(-200, 200);      //U turn 
     else if( Act == 32) MotorWriting(-150 , 150);
     else tracking(val[1], val[2], val[3], val[4], val[5]);
 // #ifdef DEBUG

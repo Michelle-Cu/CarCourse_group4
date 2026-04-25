@@ -69,12 +69,12 @@ void tracking(int l2, int l1, int m0, int r1, int r2) {
     // double _Ki;  // i term parameter (optional) (Hint: 不要調太大)
     // double error = l2 * _w2 + l1 * _w1 + m0 * _w0 + r1 * (-_w1) + r2 * (-_w2);
     // double vR, vL;  // 馬達左右轉速原始值(從PID control 計算出來)。Between -255 to 255.
-    double adj_R = 0.85, adj_L = 1.15;  // 馬達轉速修正係數。MotorWriting(_Tp,_Tp)如果歪掉就要用參數修正。
+    double adj_R = 0.95, adj_L = 1.05;  // 馬達轉速修正係數。MotorWriting(_Tp,_Tp)如果歪掉就要用參數修正。
 
     // // TODO: complete your P/PID tracking code
 
     // // end TODO
-    // MotorWriting(adj_L * vL, adj_R * vR);
+    // MotorWriting(adj_L * vL, adj_R * vR);q
 
     double numerator = (l2 * -_w2) + (l1 * -_w1) + (m0 * _w0) + (r1 * _w1) + (r2 * _w2);
     double denominator = l2 + l1 + m0 + r1 + r2;
