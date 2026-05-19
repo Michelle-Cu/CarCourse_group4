@@ -4,8 +4,8 @@ import os
 import sys
 import time
 
-import numpy as np
-import pandas
+# import numpy as np
+# import pandas
 # from BTinterface import BTInterface
 from maze import Action, Maze
 from score import ScoreboardServer, ScoreboardFake
