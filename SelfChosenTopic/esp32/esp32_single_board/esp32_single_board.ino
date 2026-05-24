@@ -1,19 +1,45 @@
-#include <esp_now.h>
-#include <WiFi.h>
+/*
+  ESP32 Single Board Integrated Controller (Robotic Arm Glove + Hand)
+  
+  This sketch integrates the MPU-6050 IMU, 5x Carbon Flex Sensors, 
+  5x Servos, and 1x A4988 Stepper Motor onto a single ESP32 board.
+  ESP-NOW communication has been removed.
+  
+  PIN CONFLICT RESOLUTION:
+  - Glove originally used:
+      Flex pins: 34, 35, 36, 39, 32
+  - Hand originally used:
+      Servo pins: 12, 13, 14, 25, 27
+      Stepper pins: step=32, dir=33
+  - Since pin 32 was shared between the 5th flex sensor and the stepper step pin:
+      We have moved the 5th flex sensor pin to GPIO 26 (ADC2_CH9).
+      Since Wi-Fi/ESP-NOW is disabled, ADC2 pins can be used for analog reads.
+*/
+
 #include <Adafruit_MPU6050.h>
 #include <Adafruit_Sensor.h>
 #include <Wire.h>
 #include <Preferences.h>
-#include "esp_mac.h"
+#include <ESP32Servo.h>
 
 // Pin Definitions
-const int flexPins[5] = {34, 35, 36, 39, 32};
-const int bootButton = 0; 
+// Flex Sensors (Analog Inputs)
+const int flexPins[5] = {34, 35, 36, 39, 26}; // Pin 26 replaces Pin 32 to avoid conflict with stepper step pin
+const int bootButton = 0;                      // Used to trigger calibration
+
+// Actuators
+const int servoPins[5] = {12, 13, 14, 25, 27};
+const int stepPin = 32;
+const int dirPin = 33;
+
+// Servos
+Servo servos[5];
 
 // MPU6050
 Adafruit_MPU6050 mpu;
 Preferences preferences;
 
+// Calibration Data
 struct CalibrationData {
   int openVal;
   int halfVal;
@@ -21,25 +47,18 @@ struct CalibrationData {
 };
 CalibrationData fingerCal[5];
 
-// Data structure to send (PACKED)
-typedef struct struct_message {
-  uint8_t finger_angles[5];
-  float x_acceleration;
-} __attribute__((packed)) struct_message;
-
-struct_message myData;
-uint8_t broadcastAddress[] = {0xC4, 0x4F, 0x33, 0x54, 0x83, 0xED};
+// Current State
+uint8_t finger_angles[5] = {0, 0, 0, 0, 0};
+float x_acceleration = 0.0;
 
 // Manual override settings for Serial control
 bool manualMode = false;
-uint8_t manual_angles[5] = {90, 90, 90, 90, 90};
-bool mpuPresent = false;
+uint8_t manual_angles[5] = {0, 0, 0, 0, 0};
 
-#if ESP_ARDUINO_VERSION >= ESP_ARDUINO_VERSION_VAL(3, 0, 0)
-void OnDataSent(const wifi_tx_info_t *tx_info, esp_now_send_status_t status) {}
-#else
-void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {}
-#endif
+// Punch settings
+const float accelerationThreshold = 19.62; // 2.0g in m/s^2 (2.0 * 9.81)
+bool isPunching = false;
+bool mpuPresent = false;
 
 void saveCalibration() {
   preferences.begin("flex-cal", false);
@@ -62,7 +81,7 @@ void loadCalibration() {
     fingerCal[i].closedVal = preferences.getInt((key + "c").c_str(), 3000);
   }
   preferences.end();
-  Serial.println("Calibration loaded.");
+  Serial.println("Calibration loaded from NVS.");
 }
 
 void runCalibration() {
@@ -105,44 +124,25 @@ uint8_t mapFlex(int val, CalibrationData cal) {
   return (uint8_t)constrain(angle, 0, 180);
 }
 
-void setup() {
-  Serial.begin(115200);
-  pinMode(bootButton, INPUT_PULLUP);
-
-  if (!mpu.begin()) {
-    Serial.println("MPU6050 missing.");
-    mpuPresent = false;
-  } else {
-    mpuPresent = true;
+void triggerPunch() {
+  isPunching = true;
+  Serial.println("PUNCH TRIGGERED!");
+  digitalWrite(dirPin, HIGH);
+  for (int i = 0; i < 200; i++) {
+    digitalWrite(stepPin, HIGH);
+    delayMicroseconds(500);
+    digitalWrite(stepPin, LOW);
+    delayMicroseconds(500);
   }
-
-  WiFi.mode(WIFI_STA);
-  if (esp_now_init() != ESP_OK) return;
-  esp_now_register_send_cb(OnDataSent);
-  
-  esp_now_peer_info_t peerInfo;
-  memset(&peerInfo, 0, sizeof(peerInfo));
-  memcpy(peerInfo.peer_addr, broadcastAddress, 6);
-  peerInfo.channel = 0;  
-  peerInfo.encrypt = false;
-  esp_now_add_peer(&peerInfo);
-
-  loadCalibration();
-
-  Serial.println("\n--- SETUP COMPLETE ---");
-  Serial.println("Press BOOT button within 3 seconds to enter CALIBRATION...");
-  
-  unsigned long startWait = millis();
-  while (millis() - startWait < 3000) {
-    if (digitalRead(bootButton) == LOW) {
-      delay(50);
-      runCalibration();
-      break;
-    }
-    delay(10);
+  delay(500);
+  digitalWrite(dirPin, LOW);
+  for (int i = 0; i < 200; i++) {
+    digitalWrite(stepPin, HIGH);
+    delayMicroseconds(2000);
+    digitalWrite(stepPin, LOW);
+    delayMicroseconds(2000);
   }
-  Serial.println("Starting normal operation...");
-  Serial.println("Type 'help' or 'h' to view manual controls.");
+  isPunching = false;
 }
 
 void processCommand(String input) {
@@ -161,7 +161,7 @@ void processCommand(String input) {
     Serial.print("Angles: ");
     for (int i = 0; i < 5; i++) {
       Serial.print("F"); Serial.print(i); Serial.print(":"); 
-      Serial.print(myData.finger_angles[i]); Serial.print("  ");
+      Serial.print(finger_angles[i]); Serial.print("  ");
     }
     Serial.println();
   } else if (input.startsWith("F") || input.startsWith("f")) {
@@ -224,25 +224,99 @@ void handleSerialCommands() {
   }
 }
 
+void setup() {
+  Serial.begin(115200);
+  delay(1000);
+  Serial.println("\n--- ESP32 SINGLE BOARD CONTROLLER START ---");
+
+  // Input Pin Setup
+  pinMode(bootButton, INPUT_PULLUP);
+
+  // Stepper Pin Setup
+  pinMode(stepPin, OUTPUT);
+  pinMode(dirPin, OUTPUT);
+
+  // Servo Setup
+  ESP32PWM::allocateTimer(0);
+  ESP32PWM::allocateTimer(1);
+  ESP32PWM::allocateTimer(2);
+  ESP32PWM::allocateTimer(3);
+
+  for (int i = 0; i < 5; i++) {
+    servos[i].setPeriodHertz(50);
+    servos[i].attach(servoPins[i], 500, 2500); // Widest standard pulse limits for maximum rotation (0 to 180 degrees)
+    servos[i].write(0);
+  }
+
+  // MPU6050 Setup
+  if (!mpu.begin()) {
+    Serial.println("MPU6050 missing or connection failed.");
+    mpuPresent = false;
+  } else {
+    Serial.println("MPU6050 initialized successfully.");
+    mpuPresent = true;
+  }
+
+  loadCalibration();
+
+  Serial.println("\n--- SETUP COMPLETE ---");
+  Serial.println("Press BOOT button within 3 seconds to enter CALIBRATION...");
+  
+  unsigned long startWait = millis();
+  while (millis() - startWait < 3000) {
+    if (digitalRead(bootButton) == LOW) {
+      delay(50);
+      runCalibration();
+      break;
+    }
+    delay(10);
+  }
+  Serial.println("Starting normal operation...");
+  Serial.println("Type 'help' or 'h' to view manual controls.");
+}
+
 void loop() {
   handleSerialCommands();
 
+  // 1. Read MPU6050
   sensors_event_t a, g, temp;
   if (mpuPresent && mpu.getEvent(&a, &g, &temp)) {
-    myData.x_acceleration = a.acceleration.x;
+    x_acceleration = a.acceleration.x;
   } else {
-    myData.x_acceleration = 0.0;
+    x_acceleration = 0.0;
   }
 
+  // 2. Read and Map Flex Sensors
   for (int i = 0; i < 5; i++) {
     if (manualMode) {
-      myData.finger_angles[i] = manual_angles[i];
+      finger_angles[i] = manual_angles[i];
     } else {
       int raw = analogRead(flexPins[i]);
-      myData.finger_angles[i] = mapFlex(raw, fingerCal[i]);
+      finger_angles[i] = mapFlex(raw, fingerCal[i]);
     }
   }
 
-  esp_now_send(broadcastAddress, (uint8_t *) &myData, sizeof(myData));
-  delay(20); 
+  // 3. Update Servos
+  for (int i = 0; i < 5; i++) {
+    servos[i].write(finger_angles[i]);
+  }
+
+  // 4. Print Status at a reasonable interval to prevent serial flooding
+  // static unsigned long lastPrintTime = 0;
+  // if (millis() - lastPrintTime >= 500) {
+  //   lastPrintTime = millis();
+  //   Serial.print("Mode: "); Serial.print(manualMode ? "MANUAL" : "AUTO");
+  //   Serial.print(" | Angles: ");
+  //   for (int i = 0; i < 5; i++) {
+  //     Serial.print(finger_angles[i]); Serial.print(" ");
+  //   }
+  //   Serial.print("| AccelX: "); Serial.println(x_acceleration);
+  // }
+
+  // 5. Punch Check
+  if (x_acceleration > accelerationThreshold && !isPunching) {
+    triggerPunch();
+  }
+
+  delay(20); // Maintain ~50Hz loop rate
 }
