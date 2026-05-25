@@ -11,6 +11,10 @@ const int dirPin = 33;
 // Servos
 Servo servos[5];
 
+// Servo mapping ranges (finger angle 0-180 maps to servoMin-servoMax)
+const int servoMinAngles[5] = {0, 0, 30, 10, 30};
+const int servoMaxAngles[5] = {180, 180, 180, 180, 180};
+
 // Data structure to receive (PACKED to prevent alignment issues)
 typedef struct struct_message {
   uint8_t finger_angles[5];
@@ -82,7 +86,7 @@ void setup() {
   for (int i = 0; i < 5; i++) {
     servos[i].setPeriodHertz(50);
     servos[i].attach(servoPins[i], 500, 2500); // Widest standard pulse limits for maximum rotation (0 to 180 degrees)
-    servos[i].write(0);
+    servos[i].write(servoMinAngles[i]);
   }
   pinMode(stepPin, OUTPUT);
   pinMode(dirPin, OUTPUT);
@@ -103,7 +107,8 @@ void loop() {
 
     // 2. Move Servos
     for (int i = 0; i < 5; i++) {
-      servos[i].write(myData.finger_angles[i]);
+      int mappedAngle = map(myData.finger_angles[i], 0, 180, servoMinAngles[i], servoMaxAngles[i]);
+      servos[i].write(mappedAngle);
     }
 
     // 3. Punch Check

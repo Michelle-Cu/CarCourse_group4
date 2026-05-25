@@ -35,6 +35,10 @@ const int dirPin = 33;
 // Servos
 Servo servos[5];
 
+// Servo mapping ranges (finger angle 0-180 maps to servoMin-servoMax)
+const int servoMinAngles[5] = {0, 0, 30, 10, 30};
+const int servoMaxAngles[5] = {180, 180, 180, 180, 180};
+
 // MPU6050
 Adafruit_MPU6050 mpu;
 Preferences preferences;
@@ -56,7 +60,7 @@ bool manualMode = false;
 uint8_t manual_angles[5] = {0, 0, 0, 0, 0};
 
 // Punch settings
-const float accelerationThreshold = 19.62; // 2.0g in m/s^2 (2.0 * 9.81)
+const float accelerationThreshold = 9.81; // 1.0g in m/s^2 (1.0 * 9.81)
 bool isPunching = false;
 bool mpuPresent = false;
 
@@ -245,7 +249,7 @@ void setup() {
   for (int i = 0; i < 5; i++) {
     servos[i].setPeriodHertz(50);
     servos[i].attach(servoPins[i], 500, 2500); // Widest standard pulse limits for maximum rotation (0 to 180 degrees)
-    servos[i].write(0);
+    servos[i].write(servoMinAngles[i]);
   }
 
   // MPU6050 Setup
@@ -298,20 +302,21 @@ void loop() {
 
   // 3. Update Servos
   for (int i = 0; i < 5; i++) {
-    servos[i].write(finger_angles[i]);
+    int mappedAngle = map(finger_angles[i], 0, 180, servoMinAngles[i], servoMaxAngles[i]);
+    servos[i].write(mappedAngle);
   }
 
   // 4. Print Status at a reasonable interval to prevent serial flooding
-  // static unsigned long lastPrintTime = 0;
-  // if (millis() - lastPrintTime >= 500) {
-  //   lastPrintTime = millis();
-  //   Serial.print("Mode: "); Serial.print(manualMode ? "MANUAL" : "AUTO");
-  //   Serial.print(" | Angles: ");
-  //   for (int i = 0; i < 5; i++) {
-  //     Serial.print(finger_angles[i]); Serial.print(" ");
-  //   }
-  //   Serial.print("| AccelX: "); Serial.println(x_acceleration);
-  // }
+  static unsigned long lastPrintTime = 0;
+  if (millis() - lastPrintTime >= 500) {
+    lastPrintTime = millis();
+    // Serial.print("Mode: "); Serial.print(manualMode ? "MANUAL" : "AUTO");
+    // Serial.print(" | Angles: ");
+    // for (int i = 0; i < 5; i++) {
+    //   Serial.print(finger_angles[i]); Serial.print(" ");
+    // }
+    Serial.print("| AccelX: "); Serial.println(x_acceleration);
+  }
 
   // 5. Punch Check
   if (x_acceleration > accelerationThreshold && !isPunching) {
