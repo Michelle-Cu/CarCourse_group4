@@ -6,8 +6,11 @@
   The current angle will print to the Serial Monitor.
   
   When it reaches 180, it will wrap back to 0.
-  0: 30 180
-  1: 10 180
+  4: 30 180
+  3: 10 180
+  2: 30 180
+  1: 0 180
+  0: 0 180
 */
 
 #include <ESP32Servo.h>
