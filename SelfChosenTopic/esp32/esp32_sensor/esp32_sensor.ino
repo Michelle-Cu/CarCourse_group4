@@ -7,8 +7,10 @@
 #include "esp_mac.h"
 
 // Pin Definitions
-const int flexPins[5] = {34, 35, 36, 39, 32};
+const int flexPins[5] = {39, 34, 35, 32, 33}; // SVN, 34, 35, 32, 33 (all ADC1 pins, safe for ESP-NOW)
 const int bootButton = 0; 
+const int sdaPin = 17; // Custom I2C SDA
+const int sclPin = 16; // Custom I2C SCL 
 
 // MPU6050
 Adafruit_MPU6050 mpu;
@@ -108,6 +110,9 @@ uint8_t mapFlex(int val, CalibrationData cal) {
 void setup() {
   Serial.begin(115200);
   pinMode(bootButton, INPUT_PULLUP);
+
+  // Start I2C with custom pins (SDA = 17, SCL = 16)
+  Wire.begin(sdaPin, sclPin);
 
   if (!mpu.begin()) {
     Serial.println("MPU6050 missing.");

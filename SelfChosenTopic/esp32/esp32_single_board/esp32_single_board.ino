@@ -11,8 +11,9 @@
   - Hand originally used:
       Servo pins: 12, 13, 14, 25, 27
       Stepper pins: step=32, dir=33
-  - Since pin 32 was shared between the 5th flex sensor and the stepper step pin:
-      We have moved the 5th flex sensor pin to GPIO 26 (ADC2_CH9).
+  - Pin 32 was shared between the 5th flex sensor and the stepper step pin.
+  - To make all 7 actuator pins contiguous on one side of the ESP32 (GPIO 32, 33, 25, 26, 27, 14, 12):
+      We moved the 5th flex sensor pin to GPIO 13 (ADC2_CH4) to avoid conflict with Servo 0 (GPIO 32).
       Since Wi-Fi/ESP-NOW is disabled, ADC2 pins can be used for analog reads.
 */
 
@@ -24,13 +25,13 @@
 
 // Pin Definitions
 // Flex Sensors (Analog Inputs)
-const int flexPins[5] = {34, 35, 36, 39, 26}; // Pin 26 replaces Pin 32 to avoid conflict with stepper step pin
+const int flexPins[5] = {34, 35, 36, 39, 13}; // Pin 13 avoids conflict with Servo 0 (GPIO 32) and Servo 1 (GPIO 33)
 const int bootButton = 0;                      // Used to trigger calibration
 
 // Actuators
-const int servoPins[5] = {12, 13, 14, 25, 27};
-const int stepPin = 32;
-const int dirPin = 33;
+const int servoPins[5] = {32, 33, 25, 26, 27};
+const int stepPin = 14;
+const int dirPin = 12;
 
 // Servos
 Servo servos[5];

@@ -4,9 +4,9 @@
 #include "esp_mac.h"
 
 // Pin Definitions
-const int servoPins[5] = {12, 13, 14, 25, 27};
-const int stepPin = 32;
-const int dirPin = 33;
+const int servoPins[5] = {32, 33, 25, 26, 27};
+const int stepPin = 14;
+const int dirPin = 12;
 
 // Servos
 Servo servos[5];

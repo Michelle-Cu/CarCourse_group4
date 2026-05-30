@@ -1,7 +1,7 @@
 /*
   Servo Calibration Test Sketch
   
-  Used to determine the physical limit of the servo connected to Pin 12.
+  Used to determine the physical limit of the servo connected to Pin 32.
   Press and hold the BOOT button (GPIO 0) to slowly turn the servo.
   The current angle will print to the Serial Monitor.
   
@@ -25,7 +25,7 @@ void setup() {
   Serial.begin(115200);
   delay(1000);
   Serial.println("\n--- SERVO CALIBRATION TEST ---");
-  Serial.println("Hold the BOOT button to slowly rotate the servo on Pin 12.");
+  Serial.println("Hold the BOOT button to slowly rotate the servo on Pin 32.");
 
   pinMode(bootButton, INPUT_PULLUP);
 
