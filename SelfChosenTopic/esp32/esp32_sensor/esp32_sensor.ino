@@ -11,6 +11,7 @@ const int flexPins[5] = {39, 34, 35, 32, 33}; // SVN, 34, 35, 32, 33 (all ADC1 p
 const int bootButton = 0; 
 const int sdaPin = 17; // Custom I2C SDA
 const int sclPin = 16; // Custom I2C SCL 
+const int ledPin = 2;   // Built-in LED on NodeMCU-32S
 
 // MPU6050
 Adafruit_MPU6050 mpu;
@@ -30,7 +31,7 @@ typedef struct struct_message {
 } __attribute__((packed)) struct_message;
 
 struct_message myData;
-uint8_t broadcastAddress[] = {0xC4, 0x4F, 0x33, 0x54, 0x83, 0xED};
+uint8_t broadcastAddress[] = {0x68, 0xFE, 0x71, 0x0C, 0xDF, 0x30}; //68:FE:71:0C:DF:30
 
 // Manual override settings for Serial control
 bool manualMode = false;
@@ -38,9 +39,21 @@ uint8_t manual_angles[5] = {90, 90, 90, 90, 90};
 bool mpuPresent = false;
 
 #if ESP_ARDUINO_VERSION >= ESP_ARDUINO_VERSION_VAL(3, 0, 0)
-void OnDataSent(const wifi_tx_info_t *tx_info, esp_now_send_status_t status) {}
+void OnDataSent(const wifi_tx_info_t *tx_info, esp_now_send_status_t status) {
+  if (status == ESP_NOW_SEND_SUCCESS) {
+    digitalWrite(ledPin, HIGH);
+  } else {
+    digitalWrite(ledPin, LOW);
+  }
+}
 #else
-void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {}
+void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
+  if (status == ESP_NOW_SEND_SUCCESS) {
+    digitalWrite(ledPin, HIGH);
+  } else {
+    digitalWrite(ledPin, LOW);
+  }
+}
 #endif
 
 void saveCalibration() {
@@ -75,8 +88,20 @@ void runCalibration() {
     Serial.print("\nPosition: "); Serial.println(labels[p]);
     Serial.println("Hold position and press BOOT button...");
     
-    // Wait for press
-    while (digitalRead(bootButton) == HIGH) delay(10);
+    // Wait for press while continuously printing current values
+    unsigned long lastPrint = 0;
+    while (digitalRead(bootButton) == HIGH) {
+      if (millis() - lastPrint >= 200) {
+        lastPrint = millis();
+        Serial.print("Current: ");
+        for (int i = 0; i < 5; i++) {
+          Serial.print("F"); Serial.print(i); Serial.print(":"); Serial.print(analogRead(flexPins[i]));
+          if (i < 4) Serial.print(" | ");
+        }
+        Serial.println();
+      }
+      delay(10);
+    }
     delay(500); // Debounce
     
     // Read values
@@ -110,6 +135,8 @@ uint8_t mapFlex(int val, CalibrationData cal) {
 void setup() {
   Serial.begin(115200);
   pinMode(bootButton, INPUT_PULLUP);
+  pinMode(ledPin, OUTPUT);
+  digitalWrite(ledPin, LOW); // Start with LED off
 
   // Start I2C with custom pins (SDA = 17, SCL = 16)
   Wire.begin(sdaPin, sclPin);
@@ -245,8 +272,11 @@ void loop() {
     } else {
       int raw = analogRead(flexPins[i]);
       myData.finger_angles[i] = mapFlex(raw, fingerCal[i]);
+      Serial.print(myData.finger_angles[i]);
+      Serial.print(" ");
     }
   }
+  if (!manualMode) Serial.println();
 
   esp_now_send(broadcastAddress, (uint8_t *) &myData, sizeof(myData));
   delay(20); 

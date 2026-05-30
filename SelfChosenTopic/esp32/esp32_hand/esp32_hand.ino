@@ -23,6 +23,8 @@ typedef struct struct_message {
 
 struct_message myData;
 volatile bool dataReady = false; // Flag to tell loop we have new data
+const int ledPin = 2;            // Built-in LED on Ruilong ESP32-S
+volatile unsigned long lastRecvTime = 0;
 
 // Punch settings
 const float accelerationThreshold = 19.62; // 2.0g in m/s^2 (2.0 * 9.81)
@@ -55,6 +57,7 @@ void OnDataRecv(const esp_now_recv_info_t *recv_info, const uint8_t *incomingDat
   if (len == sizeof(struct_message)) {
     memcpy(&myData, incomingData, sizeof(myData));
     dataReady = true;
+    lastRecvTime = millis();
   }
 }
 #else
@@ -62,6 +65,7 @@ void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len) {
   if (len == sizeof(struct_message)) {
     memcpy(&myData, incomingData, sizeof(myData));
     dataReady = true;
+    lastRecvTime = millis();
   }
 }
 #endif
@@ -90,11 +94,20 @@ void setup() {
   }
   pinMode(stepPin, OUTPUT);
   pinMode(dirPin, OUTPUT);
+  pinMode(ledPin, OUTPUT);
+  digitalWrite(ledPin, LOW); // Start with LED off
   
   Serial.println("Ready.");
 }
 
 void loop() {
+  // Connection status watchdog: LED stays ON if we received data within the last 1000ms
+  if (lastRecvTime > 0 && millis() - lastRecvTime < 1000) {
+    digitalWrite(ledPin, HIGH);
+  } else {
+    digitalWrite(ledPin, LOW);
+  }
+
   if (dataReady) {
     dataReady = false; // Reset flag
 
