@@ -1,12 +1,24 @@
 #include <esp_now.h>
 #include <WiFi.h>
 #include <ESP32Servo.h>
+#include <AccelStepper.h>
 #include "esp_mac.h"
 
 // Pin Definitions
 const int servoPins[5] = {32, 33, 25, 26, 27};
 const int stepPin = 14;
 const int dirPin = 12;
+
+#define motorInterfaceType 1
+AccelStepper stepper(motorInterfaceType, stepPin, dirPin);
+
+// Punch Stepper Settings
+const int stepsPerRotation = 1600; // TB6600 set to 8 microsteps
+const float punchAngle = 90.0;     // Angle to move for the punch stroke
+const float rechargeAngle = 270.0; // Angle to move to recharge/retract
+const float punchSpeed = 400.0;    // Speed in steps/sec for the punch stroke
+const float rechargeSpeed = 400.0; // Speed in steps/sec for the recharge stroke
+const int punchPauseMs = 1000;     // Pause time in milliseconds at punch extension
 
 // Servos
 Servo servos[5];
@@ -36,21 +48,28 @@ void triggerPunch() {
   isPunching = true;
   Serial.println("PUNCH TRIGGERED!");
   digitalWrite(ledPin, HIGH); // Turn LED on when punch is triggered
-  digitalWrite(dirPin, HIGH);
-  for (int i = 0; i < 200; i++) {
-    digitalWrite(stepPin, HIGH);
-    delayMicroseconds(500);
-    digitalWrite(stepPin, LOW);
-    delayMicroseconds(500);
+  
+  // 1. Punch Stroke (90 degrees negative)
+  long stepsPunch = (long)((punchAngle / 360.0) * stepsPerRotation);
+  long targetPunch = stepper.currentPosition() - stepsPunch;
+  stepper.setMaxSpeed(punchSpeed);
+  stepper.moveTo(targetPunch);
+  while (stepper.distanceToGo() != 0) {
+    stepper.run();
   }
-  delay(500);
-  digitalWrite(dirPin, LOW);
-  for (int i = 0; i < 200; i++) {
-    digitalWrite(stepPin, HIGH);
-    delayMicroseconds(2000);
-    digitalWrite(stepPin, LOW);
-    delayMicroseconds(2000);
+  
+  // 2. Pause at extension
+  delay(punchPauseMs);
+  
+  // 3. Recharge/Retract Stroke (270 degrees negative to complete 360 rotation)
+  long stepsRecharge = (long)((rechargeAngle / 360.0) * stepsPerRotation);
+  long targetRecharge = stepper.currentPosition() - stepsRecharge;
+  stepper.setMaxSpeed(rechargeSpeed);
+  stepper.moveTo(targetRecharge);
+  while (stepper.distanceToGo() != 0) {
+    stepper.run();
   }
+  
   digitalWrite(ledPin, LOW); // Turn LED off when punch finishes
   isPunching = false;
 }
@@ -100,6 +119,10 @@ void setup() {
   pinMode(dirPin, OUTPUT);
   pinMode(ledPin, OUTPUT);
   digitalWrite(ledPin, LOW); // Start with LED off
+
+  // Initialize stepper parameters
+  stepper.setMinPulseWidth(20); 
+  stepper.setAcceleration(2000); 
   
   Serial.println("Ready.");
 }
