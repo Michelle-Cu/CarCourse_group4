@@ -40,6 +40,11 @@ bool manualMode = false;
 uint8_t manual_angles[5] = {90, 90, 90, 90, 90};
 bool mpuPresent = false;
 
+// Low-pass filter (α closer to 1 = more responsive; closer to 0 = more smoothing)
+const float ALPHA = 0.2f;
+float filteredFlex[5]  = {2000, 2000, 2000, 2000, 2000};
+float filteredAccX = 0.0f, filteredAccY = 0.0f, filteredAccZ = 0.0f;
+
 #if ESP_ARDUINO_VERSION >= ESP_ARDUINO_VERSION_VAL(3, 0, 0)
 void OnDataSent(const wifi_tx_info_t *tx_info, esp_now_send_status_t status) {
   if (status == ESP_NOW_SEND_SUCCESS) {
@@ -277,7 +282,8 @@ void loop() {
       myData.finger_angles[i] = manual_angles[i];
     } else {
       int raw = analogRead(flexPins[i]);
-      myData.finger_angles[i] = mapFlex(raw, fingerCal[i]);
+      filteredFlex[i] = ALPHA * raw + (1.0f - ALPHA) * filteredFlex[i];
+      myData.finger_angles[i] = mapFlex((int)filteredFlex[i], fingerCal[i]);
       Serial.print(myData.finger_angles[i]);
       Serial.print(" ");
     }
