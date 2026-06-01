@@ -29,7 +29,7 @@ const int ledPin = 2;            // Built-in LED on Ruilong ESP32-S
 volatile unsigned long lastRecvTime = 0;
 
 // Punch settings
-const float accelerationThreshold = 14.715; // 1.5g in m/s^2 (1.5 * 9.81)
+const float accelerationThreshold = 15;
 bool isPunching = false;
 
 void triggerPunch() {
@@ -142,7 +142,7 @@ void loop() {
     // Choose your punch condition here:
     // e.g. for Y-axis: if (accY > accelerationThreshold && !isPunching)
     // e.g. for Z-axis: if (accZ > accelerationThreshold && !isPunching)
-    if (accX > accelerationThreshold && !isPunching) {
+    if (sqrt(accX*accX+accY*accY+accZ*accZ) > accelerationThreshold && !isPunching) {
       triggerPunch();
     }
   }
