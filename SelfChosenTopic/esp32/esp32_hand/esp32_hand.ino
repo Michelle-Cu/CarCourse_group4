@@ -19,6 +19,8 @@ const int servoMaxAngles[5] = {180, 180, 180, 180, 180};
 typedef struct struct_message {
   uint8_t finger_angles[5];
   float x_acceleration;
+  float y_acceleration;
+  float z_acceleration;
 } __attribute__((packed)) struct_message;
 
 struct_message myData;
@@ -27,12 +29,13 @@ const int ledPin = 2;            // Built-in LED on Ruilong ESP32-S
 volatile unsigned long lastRecvTime = 0;
 
 // Punch settings
-const float accelerationThreshold = 19.62; // 2.0g in m/s^2 (2.0 * 9.81)
+const float accelerationThreshold = 14.715; // 1.5g in m/s^2 (1.5 * 9.81)
 bool isPunching = false;
 
 void triggerPunch() {
   isPunching = true;
   Serial.println("PUNCH TRIGGERED!");
+  digitalWrite(ledPin, HIGH); // Turn LED on when punch is triggered
   digitalWrite(dirPin, HIGH);
   for (int i = 0; i < 200; i++) {
     digitalWrite(stepPin, HIGH);
@@ -48,6 +51,7 @@ void triggerPunch() {
     digitalWrite(stepPin, LOW);
     delayMicroseconds(2000);
   }
+  digitalWrite(ledPin, LOW); // Turn LED off when punch finishes
   isPunching = false;
 }
 
@@ -101,12 +105,14 @@ void setup() {
 }
 
 void loop() {
-  // Connection status watchdog: LED stays ON if we received data within the last 1000ms
+  // Connection status watchdog LED control disabled to allow LED to act as punch indicator
+  /*
   if (lastRecvTime > 0 && millis() - lastRecvTime < 1000) {
     digitalWrite(ledPin, HIGH);
   } else {
     digitalWrite(ledPin, LOW);
   }
+  */
 
   if (dataReady) {
     dataReady = false; // Reset flag
@@ -116,7 +122,9 @@ void loop() {
     for(int i=0; i<5; i++) {
       Serial.print(myData.finger_angles[i]); Serial.print(" ");
     }
-    Serial.print("| AccX: "); Serial.println(myData.x_acceleration);
+    Serial.print("| AccX: "); Serial.print(myData.x_acceleration);
+    Serial.print(" AccY: "); Serial.print(myData.y_acceleration);
+    Serial.print(" AccZ: "); Serial.println(myData.z_acceleration);
 
     // 2. Move Servos
     for (int i = 0; i < 5; i++) {
@@ -125,7 +133,16 @@ void loop() {
     }
 
     // 3. Punch Check
-    if (myData.x_acceleration > accelerationThreshold && !isPunching) {
+    // You can choose which axis/axes to monitor (myData.x_acceleration, myData.y_acceleration, myData.z_acceleration)
+    // Or monitor a combination, e.g., the total magnitude: sqrt(ax^2 + ay^2 + az^2)
+    float accX = myData.x_acceleration;
+    float accY = myData.y_acceleration;
+    float accZ = myData.z_acceleration;
+    
+    // Choose your punch condition here:
+    // e.g. for Y-axis: if (accY > accelerationThreshold && !isPunching)
+    // e.g. for Z-axis: if (accZ > accelerationThreshold && !isPunching)
+    if (accX > accelerationThreshold && !isPunching) {
       triggerPunch();
     }
   }

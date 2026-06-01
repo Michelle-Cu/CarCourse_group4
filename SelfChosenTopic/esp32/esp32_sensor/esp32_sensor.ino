@@ -28,6 +28,8 @@ CalibrationData fingerCal[5];
 typedef struct struct_message {
   uint8_t finger_angles[5];
   float x_acceleration;
+  float y_acceleration;
+  float z_acceleration;
 } __attribute__((packed)) struct_message;
 
 struct_message myData;
@@ -262,8 +264,12 @@ void loop() {
   sensors_event_t a, g, temp;
   if (mpuPresent && mpu.getEvent(&a, &g, &temp)) {
     myData.x_acceleration = a.acceleration.x;
+    myData.y_acceleration = a.acceleration.y;
+    myData.z_acceleration = a.acceleration.z;
   } else {
     myData.x_acceleration = 0.0;
+    myData.y_acceleration = 0.0;
+    myData.z_acceleration = 0.0;
   }
 
   for (int i = 0; i < 5; i++) {
