@@ -1,7 +1,7 @@
 #include <AccelStepper.h>
 
-const int stepPin = 8; 
-const int dirPin = 9;  
+const int stepPin = 14; 
+const int dirPin = 12;  
 #define motorInterfaceType 1
 AccelStepper stepper(motorInterfaceType, stepPin, dirPin);
 
@@ -31,7 +31,7 @@ void loop() {
     Serial.println(input);
     
     // 2. If the user types START, run the sequential moves
-    if (input == "START") { 
+    if (1) { 
       Serial.println("Starting movement sequence...");
       
       // Move 90 degrees in negative direction at 400 steps/sec
