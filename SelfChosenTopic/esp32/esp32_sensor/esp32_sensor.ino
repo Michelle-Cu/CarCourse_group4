@@ -82,40 +82,40 @@ void loadCalibration() {
 
 void runCalibration() {
   Serial.println("\n=== STARTING CALIBRATION ===");
-  const char* labels[3] = {"FULLY OPEN", "HALF CLOSED", "FULLY CLOSED"};
+  const int targetAngles[3] = {0, 90, 180};
 
-  for (int p = 0; p < 3; p++) {
-    Serial.print("\nPosition: "); Serial.println(labels[p]);
-    Serial.println("Hold position and press BOOT button...");
-    
-    // Wait for press while continuously printing current values
-    unsigned long lastPrint = 0;
-    while (digitalRead(bootButton) == HIGH) {
-      if (millis() - lastPrint >= 200) {
-        lastPrint = millis();
-        Serial.print("Current: ");
-        for (int i = 0; i < 5; i++) {
-          Serial.print("F"); Serial.print(i); Serial.print(":"); Serial.print(analogRead(flexPins[i]));
-          if (i < 4) Serial.print(" | ");
+  for (int i = 0; i < 5; i++) {
+    Serial.print("\n--- Calibrating Finger "); Serial.print(i); Serial.println(" ---");
+    for (int p = 0; p < 3; p++) {
+      int angle = targetAngles[p];
+      Serial.print("Position: "); Serial.print(angle); Serial.println(" degrees");
+      Serial.println("Hold position and press BOOT button...");
+      
+      // Wait for press while continuously printing current values once per second
+      unsigned long lastPrint = 0;
+      while (digitalRead(bootButton) == HIGH) {
+        if (millis() - lastPrint >= 1000) {
+          lastPrint = millis();
+          Serial.print("Bend to "); Serial.print(angle); Serial.print(" degrees: ");
+          Serial.println(analogRead(flexPins[i]));
         }
-        Serial.println();
+        delay(10);
       }
-      delay(10);
-    }
-    delay(500); // Debounce
-    
-    // Read values
-    for (int i = 0; i < 5; i++) {
+      delay(500); // Debounce
+      
+      // Read values
       int val = analogRead(flexPins[i]);
       if (p == 0) fingerCal[i].openVal = val;
       else if (p == 1) fingerCal[i].halfVal = val;
       else fingerCal[i].closedVal = val;
-      Serial.print("F"); Serial.print(i); Serial.print(": "); Serial.println(val);
+      
+      Serial.print("Finger "); Serial.print(i); Serial.print(" - ");
+      Serial.print(angle); Serial.print(" degrees captured: "); Serial.println(val);
+      
+      // Wait for release
+      while (digitalRead(bootButton) == LOW) delay(10);
+      delay(500);
     }
-    
-    // Wait for release
-    while (digitalRead(bootButton) == LOW) delay(10);
-    delay(500);
   }
   saveCalibration();
   Serial.println("=== CALIBRATION COMPLETE ===\n");
