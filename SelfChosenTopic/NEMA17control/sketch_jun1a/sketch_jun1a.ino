@@ -31,7 +31,7 @@ void loop() {
     Serial.println(input);
     
     // 2. If the user types START, run the sequential moves
-    if (input == "START") { 
+    if (1) { 
       Serial.println("Starting movement sequence...");
       
       // Move 90 degrees in negative direction at 400 steps/sec

@@ -1,0 +1,88 @@
+[06/03/26 09:19:26] info     ================= cer started =================
+[06/03/26 09:19:26] info     C:\Program Files\Autodesk\AutoCAD 2027\cer.dll, 7.2.4+20251128.8f05bb68.927
+[06/03/26 09:19:26] info     Setting key SP/SDK_VERSION, value 7.2.4+20251128.8f05bb68.927 (maxCount 1)
+[06/03/26 09:19:26] info     Setting key SP/PRODUCT_NAME_HASH, value f4bac121a1625586cb5b9106c8e839a7990f2b6c (maxCount 1)
+[06/03/26 09:19:26] info     Setting key SP/RUNTIME_ARCH, value 1 (maxCount 1)
+[06/03/26 09:19:26] info     Set senddmp exe path to C:\Program Files\Autodesk\AutoCAD 2027\CER\senddmp.exe
+[06/03/26 09:19:26] info     The cer_service exe C:\Program Files\Autodesk\AutoCAD 2027\CER\service\cer_service.exe is not in folder C:\Program Files\Autodesk\AutoCAD 2027\CER\, it's not a sandbox
+[06/03/26 09:19:26] info     Set upi exe path to C:\Program Files\Autodesk\AutoCAD 2027\CER\upi.exe
+[06/03/26 09:19:26] info     launching C:\Program Files\Autodesk\AutoCAD 2027\CER\upi.exe --cmd=get-device-id C:\Users\alexy\AppData\Local\Temp\15FCE767F24F74D1\Temp\upi_deviceid2
+[06/03/26 09:19:26] info     Set deviceID2 to 6A86CABFCD163A74ACCB632EDB76DC581A71FE60607910AD5907DCDC0D68AF66&FE7376C4E5DC1CBEF15FA6E5581AC944909E3EE8E1397F74CE66CA7AF4988B52&FA052FB64DE88440FE3DCBE3DF2B626A27BFCF4C529C1E9DEF71EEC4C04C2A34
+[06/03/26 09:19:26] info     Setting key SP/DEVICEID2, value 6A86CABFCD163A74ACCB632EDB76DC581A71FE60607910AD5907DCDC0D68AF66&FE7376C4E5DC1CBEF15FA6E5581AC944909E3EE8E1397F74CE66CA7AF4988B52&FA052FB64DE88440FE3DCBE3DF2B626A27BFCF4C529C1E9DEF71EEC4C04C2A34 (maxCount 1)
+[06/03/26 09:19:26] info     Setting key SP/UUID, value f4bac121a1625586cb5b9106c8e839a7990f2b6c6A86CABFCD163A74ACCB632EDB76DC581A71FE60607910AD5907DCDC0D68AF66&FE7376C4E5DC1CBEF15FA6E5581AC944909E3EE8E1397F74CE66CA7AF4988B52&FA052FB64DE88440FE3DCBE3DF2B626A27BFCF4C529C1E9DEF71EEC4C04C2A34 (maxCount 1)
+[06/03/26 09:19:26] info     Set senddmp exe path to C:\Program Files\Autodesk\AutoCAD 2027\CER\senddmp.exe
+[06/03/26 09:19:26] info     The cer_service exe C:\Program Files\Autodesk\AutoCAD 2027\CER\service\cer_service.exe is not in folder C:\Program Files\Autodesk\AutoCAD 2027\CER\, it's not a sandbox
+[06/03/26 09:19:26] info     launching C:\Program Files\Autodesk\AutoCAD 2027\CER\upi.exe "C:\Program Files\Autodesk\AutoCAD 2027\en-US\UPI\upiconfig.xml" C:\Users\alexy\AppData\Local\Temp\15FCE767F24F74D1\Temp\upi_info.xml
+[06/03/26 09:19:26] info     Setting key SP/UPI_PRODUCT, value ACD (maxCount 1)
+[06/03/26 09:19:26] info     Setting key SP/UPI_RELEASE, value 2027 (maxCount 1)
+[06/03/26 09:19:26] info     Setting key SP/UPI_MASTER, value {28B89EEF-A101-0409-2102-CF3F3A09B77D} (maxCount 1)
+[06/03/26 09:19:26] info     Setting key SP/UPI_BUILD, value 26.0.60.0.0 (maxCount 1)
+[06/03/26 09:19:26] info     Setting key SP/UPI_FULL_XML, value <?xml version="1.0"?><upipackage><upivalue version="1.0" type="product" requestingapp="true"><level name="productline" id="ACD"><level name="release" id="2027"><level name="master" id="{28B89EEF-A101-0409-2102-CF3F3A09B77D}"><level name="build" id="26.0.60.0.0"/></level></level></level></upivalue>
+<upivalue version="1.0" type="product"><level name="productline" id="INVPROSA"><level name="release" id="2027"><level name="master" id="English_Locked_x64"><level name="build" id="31.0.19200.0000"/></level></level></level></upivalue>
+<upivalue version="1.0" type="product"><level name="productline" id="INVRO"><level name="release" id="2027"><level name="master" id="English_Locked_x64"><level name="build" id="31.0.19200.0000"/></level></level></level></upivalue>
+<upivalue version="1.0" type="product"><level name="productline" id="ACAD_E"><level name="release" id="2027"><level name="master" id="{28B89EEF-A107-0000-7102-CF3F3A09B77D}"><level name="build" id="24.0.50.0.0"/></level></level></level></upivalue>
+<upivalue version="1.0" type="product"><level name="productline" id="PLC0000037"><level name="release" id="2027"><level name="master" id="{28B89EEF-A128-0409-0100-CF3F3A09B77D}"><level name="build" id="26.0.59.0.0"/></level></level></level></upivalue>
+<upivalue version="1.0" type="product"><level name="productline" id="ACAD_E"><level name="release" id="2027"><level name="master" id="{28B89EEF-A107-0409-8102-CF3F3A09B77D}"><level name="build" id="24.0.50.0.0"/></level></level></level></upivalue>
+<upivalue version="1.0" type="product"><level name="productline" id="ARCHDESK"><level name="release" id="2027"><level name="master" id="{28B89EEE-A104-0000-5102-CF3F3A09B77D}"><level name="build" id="8.9.46.0"/></level></level></level></upivalue>
+<upivalue version="1.0" type="product"><level name="productline" id="ACD"><level name="release" id="2027"><level name="master" id="{28B89EEF-A101-0409-1102-CF3F3A09B77D}"><level name="build" id="26.0.60.0.0"/></level></level></level></upivalue>
+<upivalue version="1.0" type="product"><level name="productline" id="ACD"><level name="release" id="2027"><level name="master" id="{28B89EEF-A101-0000-0102-CF3F3A09B77D}"><level name="build" id="26.0.60.0.0"/></level></level></level></upivalue>
+</upipackage> (maxCount 1)
+[06/03/26 09:19:26] info     set legacy options: /APPICON "C:\Program Files\Autodesk\AutoCAD 2027\AcBrandRes.dll" /APPICONID 1
+[06/03/26 09:19:26] info     Setting key RP/AppIcon, value C:\Program Files\Autodesk\AutoCAD 2027\AcBrandRes.dll (maxCount 1)
+[06/03/26 09:19:26] info     Setting key RP/AppIconId, value 1 (maxCount 1)
+[06/03/26 09:19:26] info     Setting key RP/CadSettingsRegPath, value Software\Autodesk\AutoCAD\R26.0\ACAD-A101:409\CadManagerControl\CustomerErrorReport (maxCount 1)
+[06/03/26 09:19:26] info     Setting key RP/AppLocaleId, value 1033 (maxCount 1)
+[06/03/26 09:19:26] info     Setting key RP/AppXML, value <ProductInformation name ="AutoCAD" build_version="X.60.0.0(x64)" registry_version="26.0" install_id_string="15FCE767F24F74D1" registry_localeID="1033" git_commit_id="90c984aa66a571142ee0757584bac517eec2175a" /> (maxCount 100)
+[06/03/26 09:19:26] info     Setting key SP/THEME_TYPE, value Blue (maxCount 1)
+[06/03/26 09:19:26] info     Setting key SP/EXCEPTION_INFO_POINTER, value 140710858753304 (maxCount 1)
+[06/03/26 09:19:26] info     Setting key SP/THREAD_ID, value 4294967295 (maxCount 1)
+[06/03/26 09:19:26] info     Get key SP/THREAD_ID, index 0: "4294967295"
+[06/03/26 09:19:26] info     Setting key SP/WER, value 0 (maxCount 1)
+[06/03/26 09:19:26] info     Get key SP/WER, index 0: "0"
+[06/03/26 09:19:26] info     Registered C:\Program Files\Autodesk\AutoCAD 2027\cer.dll as WER runtime exception module
+[06/03/26 09:19:26] info     Current ErrorMode is 32769
+[06/03/26 09:19:26] debug    Receiver ping: pong
+[06/06/26 20:40:23] info     ================= cer started =================
+[06/06/26 20:40:23] info     C:\Program Files\Autodesk\AutoCAD 2027\cer.dll, 7.2.4+20251128.8f05bb68.927
+[06/06/26 20:40:23] info     Setting key SP/SDK_VERSION, value 7.2.4+20251128.8f05bb68.927 (maxCount 1)
+[06/06/26 20:40:23] info     Setting key SP/PRODUCT_NAME_HASH, value f4bac121a1625586cb5b9106c8e839a7990f2b6c (maxCount 1)
+[06/06/26 20:40:23] info     Setting key SP/RUNTIME_ARCH, value 1 (maxCount 1)
+[06/06/26 20:40:23] info     Set senddmp exe path to C:\Program Files\Autodesk\AutoCAD 2027\CER\senddmp.exe
+[06/06/26 20:40:23] info     The cer_service exe C:\Program Files\Autodesk\AutoCAD 2027\CER\service\cer_service.exe is not in folder C:\Program Files\Autodesk\AutoCAD 2027\CER\, it's not a sandbox
+[06/06/26 20:40:23] info     Set upi exe path to C:\Program Files\Autodesk\AutoCAD 2027\CER\upi.exe
+[06/06/26 20:40:23] info     launching C:\Program Files\Autodesk\AutoCAD 2027\CER\upi.exe --cmd=get-device-id C:\Users\alexy\AppData\Local\Temp\15FCE767F24F74D1\Temp\upi_deviceid2
+[06/06/26 20:40:23] info     Set deviceID2 to 6A86CABFCD163A74ACCB632EDB76DC581A71FE60607910AD5907DCDC0D68AF66&FE7376C4E5DC1CBEF15FA6E5581AC944909E3EE8E1397F74CE66CA7AF4988B52&FA052FB64DE88440FE3DCBE3DF2B626A27BFCF4C529C1E9DEF71EEC4C04C2A34
+[06/06/26 20:40:23] info     Setting key SP/DEVICEID2, value 6A86CABFCD163A74ACCB632EDB76DC581A71FE60607910AD5907DCDC0D68AF66&FE7376C4E5DC1CBEF15FA6E5581AC944909E3EE8E1397F74CE66CA7AF4988B52&FA052FB64DE88440FE3DCBE3DF2B626A27BFCF4C529C1E9DEF71EEC4C04C2A34 (maxCount 1)
+[06/06/26 20:40:23] info     Setting key SP/UUID, value f4bac121a1625586cb5b9106c8e839a7990f2b6c6A86CABFCD163A74ACCB632EDB76DC581A71FE60607910AD5907DCDC0D68AF66&FE7376C4E5DC1CBEF15FA6E5581AC944909E3EE8E1397F74CE66CA7AF4988B52&FA052FB64DE88440FE3DCBE3DF2B626A27BFCF4C529C1E9DEF71EEC4C04C2A34 (maxCount 1)
+[06/06/26 20:40:23] info     Set senddmp exe path to C:\Program Files\Autodesk\AutoCAD 2027\CER\senddmp.exe
+[06/06/26 20:40:23] info     The cer_service exe C:\Program Files\Autodesk\AutoCAD 2027\CER\service\cer_service.exe is not in folder C:\Program Files\Autodesk\AutoCAD 2027\CER\, it's not a sandbox
+[06/06/26 20:40:23] info     launching C:\Program Files\Autodesk\AutoCAD 2027\CER\upi.exe "C:\Program Files\Autodesk\AutoCAD 2027\en-US\UPI\upiconfig.xml" C:\Users\alexy\AppData\Local\Temp\15FCE767F24F74D1\Temp\upi_info.xml
+[06/06/26 20:40:23] info     Setting key SP/UPI_PRODUCT, value ACD (maxCount 1)
+[06/06/26 20:40:23] info     Setting key SP/UPI_RELEASE, value 2027 (maxCount 1)
+[06/06/26 20:40:23] info     Setting key SP/UPI_MASTER, value {28B89EEF-A101-0409-2102-CF3F3A09B77D} (maxCount 1)
+[06/06/26 20:40:23] info     Setting key SP/UPI_BUILD, value 26.0.60.0.0 (maxCount 1)
+[06/06/26 20:40:23] info     Setting key SP/UPI_FULL_XML, value <?xml version="1.0"?><upipackage><upivalue version="1.0" type="product" requestingapp="true"><level name="productline" id="ACD"><level name="release" id="2027"><level name="master" id="{28B89EEF-A101-0409-2102-CF3F3A09B77D}"><level name="build" id="26.0.60.0.0"/></level></level></level></upivalue>
+<upivalue version="1.0" type="product"><level name="productline" id="INVPROSA"><level name="release" id="2027"><level name="master" id="English_Locked_x64"><level name="build" id="31.0.19200.0000"/></level></level></level></upivalue>
+<upivalue version="1.0" type="product"><level name="productline" id="INVRO"><level name="release" id="2027"><level name="master" id="English_Locked_x64"><level name="build" id="31.0.19200.0000"/></level></level></level></upivalue>
+<upivalue version="1.0" type="product"><level name="productline" id="ACAD_E"><level name="release" id="2027"><level name="master" id="{28B89EEF-A107-0000-7102-CF3F3A09B77D}"><level name="build" id="24.0.50.0.0"/></level></level></level></upivalue>
+<upivalue version="1.0" type="product"><level name="productline" id="PLC0000037"><level name="release" id="2027"><level name="master" id="{28B89EEF-A128-0409-0100-CF3F3A09B77D}"><level name="build" id="26.0.59.0.0"/></level></level></level></upivalue>
+<upivalue version="1.0" type="product"><level name="productline" id="ACAD_E"><level name="release" id="2027"><level name="master" id="{28B89EEF-A107-0409-8102-CF3F3A09B77D}"><level name="build" id="24.0.50.0.0"/></level></level></level></upivalue>
+<upivalue version="1.0" type="product"><level name="productline" id="ARCHDESK"><level name="release" id="2027"><level name="master" id="{28B89EEE-A104-0000-5102-CF3F3A09B77D}"><level name="build" id="8.9.46.0"/></level></level></level></upivalue>
+<upivalue version="1.0" type="product"><level name="productline" id="ACD"><level name="release" id="2027"><level name="master" id="{28B89EEF-A101-0409-1102-CF3F3A09B77D}"><level name="build" id="26.0.60.0.0"/></level></level></level></upivalue>
+<upivalue version="1.0" type="product"><level name="productline" id="ACD"><level name="release" id="2027"><level name="master" id="{28B89EEF-A101-0000-0102-CF3F3A09B77D}"><level name="build" id="26.0.60.0.0"/></level></level></level></upivalue>
+</upipackage> (maxCount 1)
+[06/06/26 20:40:23] info     set legacy options: /APPICON "C:\Program Files\Autodesk\AutoCAD 2027\AcBrandRes.dll" /APPICONID 1
+[06/06/26 20:40:23] info     Setting key RP/AppIcon, value C:\Program Files\Autodesk\AutoCAD 2027\AcBrandRes.dll (maxCount 1)
+[06/06/26 20:40:23] info     Setting key RP/AppIconId, value 1 (maxCount 1)
+[06/06/26 20:40:23] info     Setting key RP/CadSettingsRegPath, value Software\Autodesk\AutoCAD\R26.0\ACAD-A101:409\CadManagerControl\CustomerErrorReport (maxCount 1)
+[06/06/26 20:40:23] info     Setting key RP/AppLocaleId, value 1033 (maxCount 1)
+[06/06/26 20:40:23] info     Setting key RP/AppXML, value <ProductInformation name ="AutoCAD" build_version="X.60.0.0(x64)" registry_version="26.0" install_id_string="15FCE767F24F74D1" registry_localeID="1033" git_commit_id="90c984aa66a571142ee0757584bac517eec2175a" /> (maxCount 100)
+[06/06/26 20:40:23] info     Setting key SP/THEME_TYPE, value Blue (maxCount 1)
+[06/06/26 20:40:23] info     Setting key SP/EXCEPTION_INFO_POINTER, value 140724482573592 (maxCount 1)
+[06/06/26 20:40:23] info     Setting key SP/THREAD_ID, value 4294967295 (maxCount 1)
+[06/06/26 20:40:23] info     Get key SP/THREAD_ID, index 0: "4294967295"
+[06/06/26 20:40:23] info     Setting key SP/WER, value 0 (maxCount 1)
+[06/06/26 20:40:23] info     Get key SP/WER, index 0: "0"
+[06/06/26 20:40:23] info     Registered C:\Program Files\Autodesk\AutoCAD 2027\cer.dll as WER runtime exception module
+[06/06/26 20:40:23] info     Current ErrorMode is 32769
+[06/06/26 20:40:23] debug    Receiver ping: pong
