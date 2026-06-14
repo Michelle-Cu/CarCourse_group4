@@ -25,11 +25,12 @@ struct CalibrationData {
 CalibrationData fingerCal[5];
 
 // Data structure to send (PACKED)
+const float accelerationThreshold = 15.0f; // 1.5g in m/s^2 (1.5 * 9.81)
+
+// Data structure to send (PACKED)
 typedef struct struct_message {
   uint8_t finger_angles[5];
-  float x_acceleration;
-  float y_acceleration;
-  float z_acceleration;
+  uint8_t trigger_punch; // 1 = trigger punch, 0 = idle
 } __attribute__((packed)) struct_message;
 
 struct_message myData;
@@ -47,6 +48,8 @@ float filteredAccX = 0.0f, filteredAccY = 0.0f, filteredAccZ = 0.0f;
 
 #if ESP_ARDUINO_VERSION >= ESP_ARDUINO_VERSION_VAL(3, 0, 0)
 void OnDataSent(const wifi_tx_info_t *tx_info, esp_now_send_status_t status) {
+  Serial.print("Send status: ");
+  Serial.println(status == ESP_NOW_SEND_SUCCESS ? "Success (ACK received)" : "Fail (No ACK)");
   if (status == ESP_NOW_SEND_SUCCESS) {
     digitalWrite(ledPin, HIGH);
   } else {
@@ -55,6 +58,8 @@ void OnDataSent(const wifi_tx_info_t *tx_info, esp_now_send_status_t status) {
 }
 #else
 void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
+  Serial.print("Send status: ");
+  Serial.println(status == ESP_NOW_SEND_SUCCESS ? "Success (ACK received)" : "Fail (No ACK)");
   if (status == ESP_NOW_SEND_SUCCESS) {
     digitalWrite(ledPin, HIGH);
   } else {
@@ -268,13 +273,17 @@ void loop() {
 
   sensors_event_t a, g, temp;
   if (mpuPresent && mpu.getEvent(&a, &g, &temp)) {
-    myData.x_acceleration = a.acceleration.x;
-    myData.y_acceleration = a.acceleration.y;
-    myData.z_acceleration = a.acceleration.z;
+    float accX = a.acceleration.x;
+    float accY = a.acceleration.y;
+    float accZ = a.acceleration.z;
+    float totalAcc = sqrt(accX * accX + accY * accY + accZ * accZ);
+    if (totalAcc > accelerationThreshold) {
+      myData.trigger_punch = 1;
+    } else {
+      myData.trigger_punch = 0;
+    }
   } else {
-    myData.x_acceleration = 0.0;
-    myData.y_acceleration = 0.0;
-    myData.z_acceleration = 0.0;
+    myData.trigger_punch = 0;
   }
 
   for (int i = 0; i < 5; i++) {
