@@ -7,10 +7,17 @@
 // Pin Definitions
 const int servoPins[5] = {32, 33, 25, 26, 27};
 const int stepPin = 14;
-const int dirPin = 12;
+const int dirPin = 13; // Changed from 12 to 13 to avoid MTDI boot strapping conflicts
+const int bootButton = 0; // BOOT button pin on standard ESP32 boards
 
 #define motorInterfaceType 1
 AccelStepper stepper(motorInterfaceType, stepPin, dirPin);
+
+// Hardware Timer for Stepper Polling
+hw_timer_t * stepperTimer = NULL;
+void IRAM_ATTR onStepperTimer() {
+  stepper.run();
+}
 
 // Punch Stepper Settings
 const int stepsPerRotation = 1600; // TB6600 set to 8 microsteps
@@ -30,9 +37,7 @@ const int servoMaxAngles[5] = {180, 180, 180, 180, 180};
 // Data structure to receive (PACKED to prevent alignment issues)
 typedef struct struct_message {
   uint8_t finger_angles[5];
-  float x_acceleration;
-  float y_acceleration;
-  float z_acceleration;
+  uint8_t trigger_punch; // 1 = trigger punch, 0 = idle
 } __attribute__((packed)) struct_message;
 
 struct_message myData;
@@ -41,37 +46,65 @@ const int ledPin = 2;            // Built-in LED on Ruilong ESP32-S
 volatile unsigned long lastRecvTime = 0;
 
 // Punch settings
-const float accelerationThreshold = 15;
 bool isPunching = false;
+unsigned long lastPunchEndTime = 0;
+const unsigned long punchCooldownMs = 1000; // 1 second cooldown after punch completes
+
+enum PunchState {
+  PUNCH_IDLE,
+  PUNCH_EXTENDING,
+  PUNCH_PAUSED,
+  PUNCH_RECHARGING
+};
+PunchState punchState = PUNCH_IDLE;
+unsigned long punchPauseStartTime = 0;
 
 void triggerPunch() {
-  isPunching = true;
-  Serial.println("PUNCH TRIGGERED!");
-  digitalWrite(ledPin, HIGH); // Turn LED on when punch is triggered
-  
-  // 1. Punch Stroke (90 degrees negative)
-  long stepsPunch = (long)((punchAngle / 360.0) * stepsPerRotation);
-  long targetPunch = stepper.currentPosition() - stepsPunch;
-  stepper.setMaxSpeed(punchSpeed);
-  stepper.moveTo(targetPunch);
-  while (stepper.distanceToGo() != 0) {
-    stepper.run();
+  if (punchState == PUNCH_IDLE) {
+    punchState = PUNCH_EXTENDING;
+    isPunching = true;
+    Serial.println("PUNCH TRIGGERED!");
+    digitalWrite(ledPin, HIGH); // Turn LED on when punch is triggered
+    
+    // 1. Punch Stroke (90 degrees positive - reversed direction for ESP32 wiring)
+    long stepsPunch = (long)((punchAngle / 360.0) * stepsPerRotation);
+    long targetPunch = stepper.currentPosition() + stepsPunch;
+    stepper.setMaxSpeed(punchSpeed);
+    stepper.moveTo(targetPunch);
   }
-  
-  // 2. Pause at extension
-  delay(punchPauseMs);
-  
-  // 3. Recharge/Retract Stroke (270 degrees negative to complete 360 rotation)
-  long stepsRecharge = (long)((rechargeAngle / 360.0) * stepsPerRotation);
-  long targetRecharge = stepper.currentPosition() - stepsRecharge;
-  stepper.setMaxSpeed(rechargeSpeed);
-  stepper.moveTo(targetRecharge);
-  while (stepper.distanceToGo() != 0) {
-    stepper.run();
+}
+
+void updatePunch() {
+  switch (punchState) {
+    case PUNCH_IDLE:
+      break;
+      
+    case PUNCH_EXTENDING:
+      if (stepper.distanceToGo() == 0) {
+        punchState = PUNCH_PAUSED;
+        punchPauseStartTime = millis();
+      }
+      break;
+      
+    case PUNCH_PAUSED:
+      if (millis() - punchPauseStartTime >= punchPauseMs) {
+        punchState = PUNCH_RECHARGING;
+        long stepsRecharge = (long)((rechargeAngle / 360.0) * stepsPerRotation);
+        long targetRecharge = stepper.currentPosition() + stepsRecharge;
+        stepper.setMaxSpeed(rechargeSpeed);
+        stepper.moveTo(targetRecharge);
+      }
+      break;
+      
+    case PUNCH_RECHARGING:
+      if (stepper.distanceToGo() == 0) {
+        digitalWrite(ledPin, LOW); // Turn LED off when punch finishes
+        punchState = PUNCH_IDLE;
+        isPunching = false;
+        lastPunchEndTime = millis(); // Record end time for cooldown
+      }
+      break;
   }
-  
-  digitalWrite(ledPin, LOW); // Turn LED off when punch finishes
-  isPunching = false;
 }
 
 // VERY FAST CALLBACK
@@ -81,6 +114,9 @@ void OnDataRecv(const esp_now_recv_info_t *recv_info, const uint8_t *incomingDat
     memcpy(&myData, incomingData, sizeof(myData));
     dataReady = true;
     lastRecvTime = millis();
+  } else {
+    Serial.print("ESP-NOW Size Mismatch! Recv: "); Serial.print(len);
+    Serial.print(" | Expected: "); Serial.println(sizeof(struct_message));
   }
 }
 #else
@@ -89,6 +125,9 @@ void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len) {
     memcpy(&myData, incomingData, sizeof(myData));
     dataReady = true;
     lastRecvTime = millis();
+  } else {
+    Serial.print("ESP-NOW Size Mismatch! Recv: "); Serial.print(len);
+    Serial.print(" | Expected: "); Serial.println(sizeof(struct_message));
   }
 }
 #endif
@@ -119,15 +158,37 @@ void setup() {
   pinMode(dirPin, OUTPUT);
   pinMode(ledPin, OUTPUT);
   digitalWrite(ledPin, LOW); // Start with LED off
+  pinMode(bootButton, INPUT_PULLUP); // Boot button input
 
   // Initialize stepper parameters
   stepper.setMinPulseWidth(20); 
   stepper.setAcceleration(2000); 
+
+  // Initialize hardware timer to call stepper.run() every 100 microseconds (10 kHz)
+#if ESP_ARDUINO_VERSION >= ESP_ARDUINO_VERSION_VAL(3, 0, 0)
+  stepperTimer = timerBegin(1000000); // 1 MHz frequency (1 tick = 1 us)
+  timerAttachInterrupt(stepperTimer, &onStepperTimer);
+  timerAlarm(stepperTimer, 100, true, 0); // alarm value 100, autoreload, no reload limit
+  timerStart(stepperTimer);
+#else
+  stepperTimer = timerBegin(0, 80, true); // Timer 0, prescaler 80 (1 tick = 1 us)
+  timerAttachInterrupt(stepperTimer, &onStepperTimer, true);
+  timerAlarmWrite(stepperTimer, 100, true); // alarm every 100 ticks (100 us), autoreload
+  timerAlarmEnable(stepperTimer);
+#endif 
   
   Serial.println("Ready.");
 }
 
 void loop() {
+  // Always update punch state machine
+  updatePunch();
+
+  // Check physical BOOT button to trigger punch locally for testing
+  if (digitalRead(bootButton) == LOW && !isPunching && (millis() - lastPunchEndTime >= punchCooldownMs)) {
+    triggerPunch();
+  }
+
   // Connection status watchdog LED control disabled to allow LED to act as punch indicator
   /*
   if (lastRecvTime > 0 && millis() - lastRecvTime < 1000) {
@@ -145,31 +206,28 @@ void loop() {
     for(int i=0; i<5; i++) {
       Serial.print(myData.finger_angles[i]); Serial.print(" ");
     }
-    Serial.print("| AccX: "); Serial.print(myData.x_acceleration);
-    Serial.print(" AccY: "); Serial.print(myData.y_acceleration);
-    Serial.print(" AccZ: "); Serial.println(myData.z_acceleration);
+    Serial.print("| Punch Trigger: "); Serial.println(myData.trigger_punch);
 
-    // 2. Move Servos
+    // 2. Move Servos (only if the mapped angle changes to save CPU time)
+    static int lastServoAngles[5] = {-1, -1, -1, -1, -1};
     for (int i = 0; i < 5; i++) {
       int mappedAngle = map(myData.finger_angles[i], 0, 180, servoMinAngles[i], servoMaxAngles[i]);
-      servos[i].write(mappedAngle);
+      if (mappedAngle != lastServoAngles[i]) {
+        Serial.print("Writing Servo "); Serial.print(i);
+        Serial.print(" from "); Serial.print(lastServoAngles[i]);
+        Serial.print(" to "); Serial.println(mappedAngle);
+        servos[i].write(mappedAngle);
+        lastServoAngles[i] = mappedAngle;
+      }
     }
 
     // 3. Punch Check
-    // You can choose which axis/axes to monitor (myData.x_acceleration, myData.y_acceleration, myData.z_acceleration)
-    // Or monitor a combination, e.g., the total magnitude: sqrt(ax^2 + ay^2 + az^2)
-    float accX = myData.x_acceleration;
-    float accY = myData.y_acceleration;
-    float accZ = myData.z_acceleration;
-    
-    // Choose your punch condition here:
-    // e.g. for Y-axis: if (accY > accelerationThreshold && !isPunching)
-    // e.g. for Z-axis: if (accZ > accelerationThreshold && !isPunching)
-    if (sqrt(accX*accX+accY*accY+accZ*accZ) > accelerationThreshold && !isPunching) {
+    // Evaluates the punch trigger flag sent by the glove (which includes cooldown and status protection)
+    if (myData.trigger_punch == 1 && !isPunching && (millis() - lastPunchEndTime >= punchCooldownMs)) {
       triggerPunch();
     }
   }
   
-  // Give the system time to breathe
-  delay(1); 
+  // Give the system time to breathe without blocking the stepper timing
+  yield(); 
 }

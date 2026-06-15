@@ -7,11 +7,11 @@
 #include "esp_mac.h"
 
 // Pin Definitions
-const int flexPins[5] = {39, 34, 35, 32, 33}; // SVN, 34, 35, 32, 33 (all ADC1 pins, safe for ESP-NOW)
+const int flexPins[5] = {39, 34, 35, 32, 33}; 
 const int bootButton = 0; 
-const int sdaPin = 17; // Custom I2C SDA
-const int sclPin = 16; // Custom I2C SCL 
-const int ledPin = 2;   // Built-in LED on NodeMCU-32S
+const int sdaPin = 17; 
+const int sclPin = 16; 
+const int ledPin = 2;   
 
 // MPU6050
 Adafruit_MPU6050 mpu;
@@ -26,40 +26,32 @@ CalibrationData fingerCal[5];
 
 // Data structure to send (PACKED)
 typedef struct struct_message {
-  uint8_t finger_angles[5];
+  uint16_t finger_angles[5]; 
   float x_acceleration;
   float y_acceleration;
   float z_acceleration;
 } __attribute__((packed)) struct_message;
 
 struct_message myData;
-uint8_t broadcastAddress[] = {0x68, 0xFE, 0x71, 0x0C, 0xDF, 0x30}; //68:FE:71:0C:DF:30
+uint8_t broadcastAddress[] = {0x68, 0xFE, 0x71, 0x0C, 0xDF, 0x30}; 
 
 // Manual override settings for Serial control
 bool manualMode = false;
-uint8_t manual_angles[5] = {90, 90, 90, 90, 90};
+uint16_t manual_angles[5] = {90, 90, 90, 90, 90}; 
 bool mpuPresent = false;
 
-// Low-pass filter (α closer to 1 = more responsive; closer to 0 = more smoothing)
+// Low-pass filter
 const float ALPHA = 0.2f;
 float filteredFlex[5]  = {2000, 2000, 2000, 2000, 2000};
 float filteredAccX = 0.0f, filteredAccY = 0.0f, filteredAccZ = 0.0f;
 
 #if ESP_ARDUINO_VERSION >= ESP_ARDUINO_VERSION_VAL(3, 0, 0)
 void OnDataSent(const wifi_tx_info_t *tx_info, esp_now_send_status_t status) {
-  if (status == ESP_NOW_SEND_SUCCESS) {
-    digitalWrite(ledPin, HIGH);
-  } else {
-    digitalWrite(ledPin, LOW);
-  }
+  digitalWrite(ledPin, (status == ESP_NOW_SEND_SUCCESS) ? HIGH : LOW);
 }
 #else
 void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
-  if (status == ESP_NOW_SEND_SUCCESS) {
-    digitalWrite(ledPin, HIGH);
-  } else {
-    digitalWrite(ledPin, LOW);
-  }
+  digitalWrite(ledPin, (status == ESP_NOW_SEND_SUCCESS) ? HIGH : LOW);
 }
 #endif
 
@@ -87,9 +79,37 @@ void loadCalibration() {
   Serial.println("Calibration loaded.");
 }
 
+// single finger calibration
+void calibrateSingleFinger(int fingerIdx, char state) {
+  if (fingerIdx < 0 || fingerIdx >= 5) return;
+  
+  // average of 10 raw data
+  long sum = 0;
+  for(int j=0; j<10; j++) {
+    sum += analogRead(flexPins[fingerIdx]);
+    delay(10);
+  }
+  int avgVal = sum / 10;
+
+  if (state == 'o' || state == 'O') {
+    fingerCal[fingerIdx].openVal = avgVal;
+    Serial.print("-> Finger "); Serial.print(fingerIdx); Serial.print(" [OPEN] calibrated to: "); Serial.println(avgVal);
+  } else if (state == 'h' || state == 'H') {
+    fingerCal[fingerIdx].halfVal = avgVal;
+    Serial.print("-> Finger "); Serial.print(fingerIdx); Serial.print(" [HALF] calibrated to: "); Serial.println(avgVal);
+  } else if (state == 'c' || state == 'C') {
+    fingerCal[fingerIdx].closedVal = avgVal;
+    Serial.print("-> Finger "); Serial.print(fingerIdx); Serial.print(" [CLOSED] calibrated to: "); Serial.println(avgVal);
+  }
+  
+  saveCalibration(); 
+}
+
+
 void runCalibration() {
-  Serial.println("\n=== STARTING CALIBRATION ===");
+  Serial.println("\n=== STARTING FULL CALIBRATION ===");
   const int targetAngles[3] = {0, 90, 180};
+  const char states[3] = {'o', 'h', 'c'};
 
   for (int i = 0; i < 5; i++) {
     Serial.print("\n--- Calibrating Finger "); Serial.print(i); Serial.println(" ---");
@@ -97,40 +117,29 @@ void runCalibration() {
       int angle = targetAngles[p];
       Serial.print("Position: "); Serial.print(angle); Serial.println(" degrees");
       Serial.println("Hold position and press BOOT button...");
-      
-      // Wait for press while continuously printing current values once per second
+  
       unsigned long lastPrint = 0;
       while (digitalRead(bootButton) == HIGH) {
         if (millis() - lastPrint >= 1000) {
           lastPrint = millis();
-          Serial.print("Bend to "); Serial.print(angle); Serial.print(" degrees: ");
+          Serial.print("Current Raw for Finger "); Serial.print(i); Serial.print(": ");
           Serial.println(analogRead(flexPins[i]));
         }
         delay(10);
       }
-      delay(500); // Debounce
+      delay(500); 
       
-      // Read values
-      int val = analogRead(flexPins[i]);
-      if (p == 0) fingerCal[i].openVal = val;
-      else if (p == 1) fingerCal[i].halfVal = val;
-      else fingerCal[i].closedVal = val;
+      calibrateSingleFinger(i, states[p]);
       
-      Serial.print("Finger "); Serial.print(i); Serial.print(" - ");
-      Serial.print(angle); Serial.print(" degrees captured: "); Serial.println(val);
-      
-      // Wait for release
       while (digitalRead(bootButton) == LOW) delay(10);
-      delay(500);
+      delay(500); 
     }
   }
-  saveCalibration();
-  Serial.println("=== CALIBRATION COMPLETE ===\n");
+  Serial.println("=== FULL CALIBRATION COMPLETE ===\n");
 }
 
 uint8_t mapFlex(int val, CalibrationData cal) {
   float angle;
-  // Segment 1: Open to Half
   if ((cal.openVal < cal.closedVal && val <= cal.halfVal) || (cal.openVal > cal.closedVal && val >= cal.halfVal)) {
     angle = map(val, cal.openVal, cal.halfVal, 0, 90);
   } else {
@@ -143,9 +152,8 @@ void setup() {
   Serial.begin(115200);
   pinMode(bootButton, INPUT_PULLUP);
   pinMode(ledPin, OUTPUT);
-  digitalWrite(ledPin, LOW); // Start with LED off
+  digitalWrite(ledPin, LOW); 
 
-  // Start I2C with custom pins (SDA = 17, SCL = 16)
   Wire.begin(sdaPin, sclPin);
 
   if (!mpu.begin()) {
@@ -169,78 +177,92 @@ void setup() {
   loadCalibration();
 
   Serial.println("\n--- SETUP COMPLETE ---");
-  Serial.println("Press BOOT button within 3 seconds to enter CALIBRATION...");
+  Serial.println("Press BOOT button within 3 seconds to enter FULL CALIBRATION...");
   
   unsigned long startWait = millis();
   while (millis() - startWait < 3000) {
     if (digitalRead(bootButton) == LOW) {
       delay(50);
-      runCalibration();
+      runCalibration(); 
       break;
     }
     delay(10);
   }
   Serial.println("Starting normal operation...");
-  Serial.println("Type 'help' or 'h' to view manual controls.");
+  Serial.println("Type 'help' or 'h' to view manual/calibration controls.");
 }
 
 void processCommand(String input) {
+  input.trim();
+  
   if (input.equalsIgnoreCase("auto") || input.equalsIgnoreCase("a")) {
     manualMode = false;
     Serial.println("Switched to AUTO (sensor) mode.");
-  } else if (input.equalsIgnoreCase("help") || input.equalsIgnoreCase("h")) {
+  } 
+  else if (input.equalsIgnoreCase("help") || input.equalsIgnoreCase("h")) {
     Serial.println("\n--- Serial Control Help ---");
-    Serial.println("  F <finger_index> <angle_0_to_180> - Set individual finger angle (e.g., 'F 0 90')");
-    Serial.println("  M <angle>                         - Set all fingers to angle (e.g., 'M 90')");
-    Serial.println("  A                                 - Switch back to AUTO (sensor) mode");
-    Serial.println("  STATUS                            - Show current mode and angles");
+    Serial.println("  F <index> <angle>   - Set individual finger angle (e.g., 'F 0 90')");
+    Serial.println("  M <angle>           - Set all fingers to angle (e.g., 'M 90')");
+    Serial.println("  A                   - Switch back to AUTO (sensor) mode");
+    Serial.println("  STATUS              - Show current mode, values, and calibration maps");
+    Serial.println("\n--- Live Calibration Commands (Anytime) ---");
+    Serial.println("  CAL <index> <state> - Calibrate single finger index (0-4)");
+    Serial.println("                        states: O = Open (0°), H = Half (90°), C = Closed (180°)");
+    Serial.println("                        Example: 'CAL 0 O'");
     Serial.println("---------------------------");
-  } else if (input.equalsIgnoreCase("status")) {
+  } 
+  else if (input.equalsIgnoreCase("status")) {
     Serial.print("Mode: "); Serial.println(manualMode ? "MANUAL" : "AUTO");
-    Serial.print("Angles: ");
+    Serial.println("[Current Angles & Calibration Limits]");
     for (int i = 0; i < 5; i++) {
-      Serial.print("F"); Serial.print(i); Serial.print(":"); 
-      Serial.print(myData.finger_angles[i]); Serial.print("  ");
+      Serial.print("Finger "); Serial.print(i); Serial.print(" -> Ang: ");
+      Serial.print(myData.finger_angles[i]);
+      Serial.print("° | Limits: [O:"); Serial.print(fingerCal[i].openVal);
+      Serial.print(" H:"); Serial.print(fingerCal[i].halfVal);
+      Serial.print(" C:"); Serial.print(fingerCal[i].closedVal); Serial.println("]");
     }
-    Serial.println();
-  } else if (input.startsWith("F") || input.startsWith("f")) {
+  } 
+  else if (input.startsWith("CAL") || input.startsWith("cal")) {
+    String cmd = input.substring(3);
+    cmd.trim(); 
+    int spaceIdx = cmd.indexOf(' ');
+    if (spaceIdx != -1) {
+      int fingerIdx = cmd.substring(0, spaceIdx).toInt();
+      String stateStr = cmd.substring(spaceIdx + 1);
+      stateStr.trim();
+      char state = stateStr.charAt(0);
+      
+      if (fingerIdx >= 0 && fingerIdx < 5 && (state == 'O' || state == 'o' || state == 'H' || state == 'h' || state == 'C' || state == 'c')) {
+        calibrateSingleFinger(fingerIdx, state);
+      } else {
+        Serial.println("Error: Invalid CAL parameters. Example: 'CAL 0 O'");
+      }
+    } else {
+      Serial.println("Error: Use format 'CAL <index> <O/H/C>'");
+    }
+  }
+  else if (input.startsWith("F") || input.startsWith("f")) {
     String cmd = input.substring(1);
     cmd.trim();
     int delimIdx = cmd.indexOf(' ');
     if (delimIdx == -1) delimIdx = cmd.indexOf('=');
     if (delimIdx != -1) {
-      String indexStr = cmd.substring(0, delimIdx);
-      String valStr = cmd.substring(delimIdx + 1);
-      indexStr.trim();
-      valStr.trim();
-      int fingerIdx = indexStr.toInt();
-      int angle = valStr.toInt();
+      int fingerIdx = cmd.substring(0, delimIdx).toInt();
+      int angle = cmd.substring(delimIdx + 1).toInt();
       if (fingerIdx >= 0 && fingerIdx < 5 && angle >= 0 && angle <= 180) {
         manual_angles[fingerIdx] = angle;
         manualMode = true;
-        Serial.print("Manual Mode Active. Set finger "); Serial.print(fingerIdx);
-        Serial.print(" to "); Serial.print(angle); Serial.println(" degrees.");
-      } else {
-        Serial.println("Error: Invalid finger index (0-4) or angle (0-180).");
+        Serial.print("Manual Mode. Finger "); Serial.print(fingerIdx); Serial.print(" -> "); Serial.println(angle);
       }
-    } else {
-      Serial.println("Error: Invalid command format. Use 'F <index> <angle>' (e.g., 'F 0 90')");
     }
-  } else if (input.startsWith("M") || input.startsWith("m")) {
-    String valStr = input.substring(1);
-    valStr.trim();
-    int angle = valStr.toInt();
+  } 
+  else if (input.startsWith("M") || input.startsWith("m")) {
+    int angle = input.substring(1).toInt();
     if (angle >= 0 && angle <= 180) {
       manualMode = true;
-      for (int i = 0; i < 5; i++) {
-        manual_angles[i] = angle;
-      }
-      Serial.print("Manual Mode Active. Set ALL fingers to "); Serial.print(angle); Serial.println(" degrees.");
-    } else {
-      Serial.println("Error: Invalid angle (0-180).");
+      for (int i = 0; i < 5; i++) manual_angles[i] = angle;
+      Serial.print("Manual Mode. All fingers -> "); Serial.println(angle);
     }
-  } else {
-    Serial.print("Unknown command: '"); Serial.print(input); Serial.println("'. Type 'h' or 'help' for help.");
   }
 }
 
@@ -256,9 +278,7 @@ void handleSerialCommands() {
       }
     } else {
       inputBuffer += c;
-      if (inputBuffer.length() > 64) {
-        inputBuffer = "";
-      }
+      if (inputBuffer.length() > 64) inputBuffer = "";
     }
   }
 }
@@ -272,10 +292,11 @@ void loop() {
     myData.y_acceleration = a.acceleration.y;
     myData.z_acceleration = a.acceleration.z;
   } else {
-    myData.x_acceleration = 0.0;
-    myData.y_acceleration = 0.0;
-    myData.z_acceleration = 0.0;
+    myData.x_acceleration = 0.0; myData.y_acceleration = 0.0; myData.z_acceleration = 0.0;
   }
+
+  // Serial.print((uint16_t)filteredFlex[0]);
+  // Serial.print(" ");
 
   for (int i = 0; i < 5; i++) {
     if (manualMode) {
@@ -283,7 +304,10 @@ void loop() {
     } else {
       int raw = analogRead(flexPins[i]);
       filteredFlex[i] = ALPHA * raw + (1.0f - ALPHA) * filteredFlex[i];
+      
+      // 輸出對應的 0 ~ 180 度穩定角度
       myData.finger_angles[i] = mapFlex((int)filteredFlex[i], fingerCal[i]);
+      
       Serial.print(myData.finger_angles[i]);
       Serial.print(" ");
     }

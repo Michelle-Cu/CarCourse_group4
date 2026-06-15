@@ -1,78 +1,30 @@
-#include <AccelStepper.h>
+#include <Servo.h>
 
-const int stepPin = 14; 
-const int dirPin = 12;  
-#define motorInterfaceType 1
-AccelStepper stepper(motorInterfaceType, stepPin, dirPin);
+// Create a servo object to control your SG90
+Servo myservo;  
 
-// TB6600 set to 8 microsteps = 1600 steps per full 360° rotation
-const int stepsPerRotation = 1600; 
+// Define the PWM pin connected to the servo signal wire
+const int servoPin = 9; 
 
 void setup() {
-  // CRITICAL FOR TB6600: Ensures the signal pulse is wide enough 
-  // for the driver's internal electronics to catch it.
-  stepper.setMinPulseWidth(20); 
-  
-  // Set a robust acceleration so the motor transitions smoothly
-  stepper.setAcceleration(2000);    
-
-  // Initialize serial communication
-  Serial.begin(9600);
-  Serial.println("Arduino Ready! Type 'START' in the Serial Monitor and press Enter.");
+  // Attach the servo object to pin 9
+  myservo.attach(servoPin);  
 }
 
 void loop() {
-  // 1. Check the serial monitor for input
-  if (Serial.available() > 0) {
-    String input = Serial.readStringUntil('\n');
-    input.trim(); // Remove any accidental spaces or hidden characters
-    
-    Serial.print("You typed: ");
-    Serial.println(input);
-    
-    // 2. If the user types START, run the sequential moves
-    if (1) { 
-      Serial.println("Starting movement sequence...");
-      
-      // Move 90 degrees in negative direction at 400 steps/sec
-      moveAngleNegative(90.0, 400);
-      
-      delay(1000); // Pause at destination
-      
-      // Move an additional 270 degrees in negative direction at 400 steps/sec
-      moveAngleNegative(270.0, 400);
-      
-      Serial.println("Sequence finished! Ready for next command.");
-    }
+  // Sweep from 0 degrees to 180 degrees
+  for (int pos = 0; pos <= 180; pos += 1) { 
+    myservo.write(pos);              // Tell servo to go to position in variable 'pos'
+    delay(15);                       // Waits 15ms for the servo to reach the position
   }
-}
+  
+  delay(1000);                       // Wait 1 second at 180 degrees
 
-/**
- * Moves to a precise angle in the negative direction
- * @param angle - Total degrees to move (positive number, e.g., 90.0)
- * @param speed - Maximum speed during this movement
- */
-void moveAngleNegative(float angle, float speed) {
-  // Calculate steps required for the requested angle
-  long stepsToMove = (long)((angle / 360.0) * stepsPerRotation);
-  
-  // Subtracting from current position guarantees it rolls backward
-  long newTarget = stepper.currentPosition() - stepsToMove;
-  
-  stepper.setMaxSpeed(speed);
-  stepper.moveTo(newTarget);
-  
-  // Block and drive the motor until it arrives exactly at the angle
-  while (stepper.distanceToGo() != 0) {
-    stepper.run(); // Must use run() here to utilize acceleration
+  // Sweep back from 180 degrees to 0 degrees
+  for (int pos = 180; pos >= 0; pos -= 1) { 
+    myservo.write(pos);              // Tell servo to go to position in variable 'pos'
+    delay(15);                       // Waits 15ms for the servo to reach the position
   }
-}
-
-/**
- * Continuous negative rotation (no stopping)
- * @param speed - The speed in steps per second (positive number)
- */
-void spinAlwaysNegative(float speed) {
-  stepper.setMaxSpeed(speed); 
-  stepper.setSpeed(-speed); // Negative speed keeps it spinning backward
+  
+  delay(2000);                       // Wait 1 second at 0 degrees
 }
