@@ -81,9 +81,9 @@ void triggerPunch() {
     Serial.println("PUNCH TRIGGERED!");
     digitalWrite(ledPin, HIGH); // Turn LED on when punch is triggered
     
-    // 1. Punch Stroke (90 degrees positive - reversed direction for ESP32 wiring)
+    // 1. Punch Stroke (90 degrees negative direction)
     long stepsPunch = (long)((punchAngle / 360.0) * stepsPerRotation);
-    long targetPunch = stepper.currentPosition() + stepsPunch;
+    long targetPunch = stepper.currentPosition() - stepsPunch;
     stepper.setMaxSpeed(punchSpeed);
     stepper.moveTo(targetPunch);
   }
@@ -105,7 +105,7 @@ void updatePunch() {
       if (millis() - punchPauseStartTime >= punchPauseMs) {
         punchState = PUNCH_RECHARGING;
         long stepsRecharge = (long)((rechargeAngle / 360.0) * stepsPerRotation);
-        long targetRecharge = stepper.currentPosition() + stepsRecharge;
+        long targetRecharge = stepper.currentPosition() - stepsRecharge;
         stepper.setMaxSpeed(rechargeSpeed);
         stepper.moveTo(targetRecharge);
       }
