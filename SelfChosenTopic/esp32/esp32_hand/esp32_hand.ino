@@ -13,10 +13,25 @@ const int bootButton = 0; // BOOT button pin on standard ESP32 boards
 #define motorInterfaceType 1
 AccelStepper stepper(motorInterfaceType, stepPin, dirPin);
 
+// Task handle for stepper task
+TaskHandle_t stepperTaskHandle = NULL;
+
 // Hardware Timer for Stepper Polling
 hw_timer_t * stepperTimer = NULL;
+
 void IRAM_ATTR onStepperTimer() {
-  stepper.run();
+  BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+  vTaskNotifyGiveFromISR(stepperTaskHandle, &xHigherPriorityTaskWoken);
+  if (xHigherPriorityTaskWoken) {
+    portYIELD_FROM_ISR();
+  }
+}
+
+void stepperTask(void *pvParameters) {
+  while (true) {
+    ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+    stepper.run();
+  }
 }
 
 // Punch Stepper Settings
@@ -164,7 +179,18 @@ void setup() {
   stepper.setMinPulseWidth(20); 
   stepper.setAcceleration(2000); 
 
-  // Initialize hardware timer to call stepper.run() every 100 microseconds (10 kHz)
+  // Create high-priority stepper task pinned to Core 1
+  xTaskCreatePinnedToCore(
+    stepperTask,
+    "StepperTask",
+    2048,             // Stack size
+    NULL,             // Parameter
+    24,               // Very high priority
+    &stepperTaskHandle,
+    1                 // Core 1
+  );
+
+  // Initialize hardware timer to notify the stepper task every 100 microseconds (10 kHz)
 #if ESP_ARDUINO_VERSION >= ESP_ARDUINO_VERSION_VAL(3, 0, 0)
   stepperTimer = timerBegin(1000000); // 1 MHz frequency (1 tick = 1 us)
   timerAttachInterrupt(stepperTimer, &onStepperTimer);
