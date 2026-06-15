@@ -25,11 +25,11 @@ struct CalibrationData {
 CalibrationData fingerCal[5];
 
 // Data structure to send (PACKED)
+const float accelerationThreshold = 15.0f; // 1.5g in m/s^2 (1.5 * 9.81)
+
 typedef struct struct_message {
-  uint16_t finger_angles[5]; 
-  float x_acceleration;
-  float y_acceleration;
-  float z_acceleration;
+  uint8_t finger_angles[5];
+  uint8_t trigger_punch; // 1 = trigger punch, 0 = idle
 } __attribute__((packed)) struct_message;
 
 struct_message myData;
@@ -37,7 +37,7 @@ uint8_t broadcastAddress[] = {0x68, 0xFE, 0x71, 0x0C, 0xDF, 0x30};
 
 // Manual override settings for Serial control
 bool manualMode = false;
-uint16_t manual_angles[5] = {90, 90, 90, 90, 90}; 
+uint8_t manual_angles[5] = {90, 90, 90, 90, 90}; 
 bool mpuPresent = false;
 
 // Low-pass filter
@@ -288,11 +288,17 @@ void loop() {
 
   sensors_event_t a, g, temp;
   if (mpuPresent && mpu.getEvent(&a, &g, &temp)) {
-    myData.x_acceleration = a.acceleration.x;
-    myData.y_acceleration = a.acceleration.y;
-    myData.z_acceleration = a.acceleration.z;
+    float accX = a.acceleration.x;
+    float accY = a.acceleration.y;
+    float accZ = a.acceleration.z;
+    float totalAcc = sqrt(accX * accX + accY * accY + accZ * accZ);
+    if (totalAcc > accelerationThreshold) {
+      myData.trigger_punch = 1;
+    } else {
+      myData.trigger_punch = 0;
+    }
   } else {
-    myData.x_acceleration = 0.0; myData.y_acceleration = 0.0; myData.z_acceleration = 0.0;
+    myData.trigger_punch = 0;
   }
 
   // Serial.print((uint16_t)filteredFlex[0]);
