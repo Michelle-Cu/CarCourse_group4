@@ -1,7 +1,6 @@
 #include <esp_now.h>
 #include <WiFi.h>
 #include <ESP32Servo.h>
-#include <AccelStepper.h>
 #include "esp_mac.h"
 
 // Pin Definitions
@@ -10,27 +9,49 @@ const int stepPin = 14;
 const int dirPin = 13; // Changed from 12 to 13 to avoid MTDI boot strapping conflicts
 const int bootButton = 0; // BOOT button pin on standard ESP32 boards
 
-#define motorInterfaceType 1
-AccelStepper stepper(motorInterfaceType, stepPin, dirPin);
-
-// Task handle for stepper task
-TaskHandle_t stepperTaskHandle = NULL;
-
 // Hardware Timer for Stepper Polling
 hw_timer_t * stepperTimer = NULL;
 
-void IRAM_ATTR onStepperTimer() {
-  BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-  vTaskNotifyGiveFromISR(stepperTaskHandle, &xHigherPriorityTaskWoken);
-  if (xHigherPriorityTaskWoken) {
-    portYIELD_FROM_ISR();
-  }
+// Stepper control variables (volatile as they are modified in ISR)
+volatile long stepperRemainingSteps = 0;
+const int punchDirection = LOW; // Set to HIGH or LOW to reverse physical rotation direction
+
+// Helper to set/change timer alarm interval and start the timer
+void setTimerInterval(uint32_t intervalUs) {
+  if (stepperTimer == NULL) return;
+#if ESP_ARDUINO_VERSION >= ESP_ARDUINO_VERSION_VAL(3, 0, 0)
+  timerAlarm(stepperTimer, intervalUs, true, 0);
+  timerStart(stepperTimer);
+#else
+  timerAlarmWrite(stepperTimer, intervalUs, true);
+  timerAlarmEnable(stepperTimer);
+#endif
 }
 
-void stepperTask(void *pvParameters) {
-  while (true) {
-    ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-    stepper.run();
+// Helper to stop the timer
+void stopTimer() {
+  if (stepperTimer == NULL) return;
+#if ESP_ARDUINO_VERSION >= ESP_ARDUINO_VERSION_VAL(3, 0, 0)
+  timerStop(stepperTimer);
+#else
+  timerAlarmDisable(stepperTimer);
+#endif
+}
+
+// IRAM-safe hardware timer ISR for generating step pulses
+void IRAM_ATTR onStepperTimer() {
+  if (stepperRemainingSteps > 0) {
+    digitalWrite(stepPin, HIGH);
+    ets_delay_us(10); // Standard TB6600 driver needs at least 2.2us high pulse width
+    digitalWrite(stepPin, LOW);
+    stepperRemainingSteps--;
+    if (stepperRemainingSteps == 0) {
+#if ESP_ARDUINO_VERSION >= ESP_ARDUINO_VERSION_VAL(3, 0, 0)
+      timerStop(stepperTimer);
+#else
+      timerAlarmDisable(stepperTimer);
+#endif
+    }
   }
 }
 
@@ -45,9 +66,7 @@ const int punchPauseMs = 1000;     // Pause time in milliseconds at punch extens
 // Servos
 Servo servos[5];
 
-// Servo mapping ranges (finger angle 0-180 maps to servoMin-servoMax)
-const int servoMinAngles[5] = {0, 0, 30, 10, 30};
-const int servoMaxAngles[5] = {180, 180, 180, 180, 180};
+
 
 // Data structure to receive (PACKED to prevent alignment issues)
 typedef struct struct_message {
@@ -81,11 +100,15 @@ void triggerPunch() {
     Serial.println("PUNCH TRIGGERED!");
     digitalWrite(ledPin, HIGH); // Turn LED on when punch is triggered
     
-    // 1. Punch Stroke (90 degrees negative direction)
+    // 1. Punch Stroke (90 degrees)
     long stepsPunch = (long)((punchAngle / 360.0) * stepsPerRotation);
-    long targetPunch = stepper.currentPosition() - stepsPunch;
-    stepper.setMaxSpeed(punchSpeed);
-    stepper.moveTo(targetPunch);
+    digitalWrite(dirPin, punchDirection);
+    
+    // Calculate step interval: 1,000,000 us / steps_per_sec
+    uint32_t stepIntervalUs = (uint32_t)(1000000.0 / punchSpeed);
+    
+    stepperRemainingSteps = stepsPunch;
+    setTimerInterval(stepIntervalUs);
   }
 }
 
@@ -95,7 +118,7 @@ void updatePunch() {
       break;
       
     case PUNCH_EXTENDING:
-      if (stepper.distanceToGo() == 0) {
+      if (stepperRemainingSteps == 0) {
         punchState = PUNCH_PAUSED;
         punchPauseStartTime = millis();
       }
@@ -105,14 +128,18 @@ void updatePunch() {
       if (millis() - punchPauseStartTime >= punchPauseMs) {
         punchState = PUNCH_RECHARGING;
         long stepsRecharge = (long)((rechargeAngle / 360.0) * stepsPerRotation);
-        long targetRecharge = stepper.currentPosition() - stepsRecharge;
-        stepper.setMaxSpeed(rechargeSpeed);
-        stepper.moveTo(targetRecharge);
+        
+        digitalWrite(dirPin, punchDirection); // Same direction for 360 degree total rotation
+        
+        uint32_t stepIntervalUs = (uint32_t)(1000000.0 / rechargeSpeed);
+        
+        stepperRemainingSteps = stepsRecharge;
+        setTimerInterval(stepIntervalUs);
       }
       break;
       
     case PUNCH_RECHARGING:
-      if (stepper.distanceToGo() == 0) {
+      if (stepperRemainingSteps == 0) {
         digitalWrite(ledPin, LOW); // Turn LED off when punch finishes
         punchState = PUNCH_IDLE;
         isPunching = false;
@@ -167,7 +194,7 @@ void setup() {
   for (int i = 0; i < 5; i++) {
     servos[i].setPeriodHertz(50);
     servos[i].attach(servoPins[i], 500, 2500); // Widest standard pulse limits for maximum rotation (0 to 180 degrees)
-    servos[i].write(servoMinAngles[i]);
+    servos[i].write(0);
   }
   pinMode(stepPin, OUTPUT);
   pinMode(dirPin, OUTPUT);
@@ -175,34 +202,15 @@ void setup() {
   digitalWrite(ledPin, LOW); // Start with LED off
   pinMode(bootButton, INPUT_PULLUP); // Boot button input
 
-  // Initialize stepper parameters
-  stepper.setMinPulseWidth(20); 
-  stepper.setAcceleration(2000); 
-
-  // Create high-priority stepper task pinned to Core 1
-  xTaskCreatePinnedToCore(
-    stepperTask,
-    "StepperTask",
-    2048,             // Stack size
-    NULL,             // Parameter
-    24,               // Very high priority
-    &stepperTaskHandle,
-    1                 // Core 1
-  );
-
-  // Initialize hardware timer to notify the stepper task every 100 microseconds (10 kHz)
+  // Initialize hardware timer (1 tick = 1 us) but do not configure/start the alarm yet
 #if ESP_ARDUINO_VERSION >= ESP_ARDUINO_VERSION_VAL(3, 0, 0)
-  stepperTimer = timerBegin(1000000); // 1 MHz frequency (1 tick = 1 us)
+  stepperTimer = timerBegin(1000000); // 1 MHz frequency
   timerAttachInterrupt(stepperTimer, &onStepperTimer);
-  timerAlarm(stepperTimer, 100, true, 0); // alarm value 100, autoreload, no reload limit
-  timerStart(stepperTimer);
 #else
   stepperTimer = timerBegin(0, 80, true); // Timer 0, prescaler 80 (1 tick = 1 us)
   timerAttachInterrupt(stepperTimer, &onStepperTimer, true);
-  timerAlarmWrite(stepperTimer, 100, true); // alarm every 100 ticks (100 us), autoreload
-  timerAlarmEnable(stepperTimer);
 #endif 
-  
+
   Serial.println("Ready.");
 }
 
@@ -234,16 +242,16 @@ void loop() {
     }
     Serial.print("| Punch Trigger: "); Serial.println(myData.trigger_punch);
 
-    // 2. Move Servos (only if the mapped angle changes to save CPU time)
+    // 2. Move Servos (only if the raw angle changes to save CPU time)
     static int lastServoAngles[5] = {-1, -1, -1, -1, -1};
     for (int i = 0; i < 5; i++) {
-      int mappedAngle = map(myData.finger_angles[i], 0, 180, servoMinAngles[i], servoMaxAngles[i]);
-      if (mappedAngle != lastServoAngles[i]) {
+      int rawAngle = myData.finger_angles[i];
+      if (rawAngle != lastServoAngles[i]) {
         Serial.print("Writing Servo "); Serial.print(i);
         Serial.print(" from "); Serial.print(lastServoAngles[i]);
-        Serial.print(" to "); Serial.println(mappedAngle);
-        servos[i].write(mappedAngle);
-        lastServoAngles[i] = mappedAngle;
+        Serial.print(" to "); Serial.println(rawAngle);
+        servos[i].write(rawAngle);
+        lastServoAngles[i] = rawAngle;
       }
     }
 
