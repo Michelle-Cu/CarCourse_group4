@@ -117,7 +117,7 @@ void gestureSound(){
   if( straight[0] == 1 && straight[4] == 1 && count == 2) { myDFPlayer.play(6); lastSoundTime = millis();} 
   else if( straight[0] == 1 && straight[1] == 1 && count == 2) { myDFPlayer.play(7); lastSoundTime = millis();}
   else if( straight[1] == 1 && straight[2] == 1 && straight[3] == 1 && count == 3) { myDFPlayer.play(3); lastSoundTime = millis();}
-  else if( count == 5) { myDFPlayer.play(5); lastSoundTime = millis();}
+  else if( count == 5) { myDFPlayer.play(4); lastSoundTime = millis();}
 }
 
 void triggerPunch() {
