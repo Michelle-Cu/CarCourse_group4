@@ -110,7 +110,10 @@ void gestureSound(){
       int rawAngle = myData.finger_angles[i];
       if( rawAngle < 90 ) {straight[i] = 1; count++; }
       else{ straight[i] = 0; }
+      Serial.print(straight[i]);
+      Serial.print(" ");
   }
+  Serial.println(count);
   if( straight[0] == 1 && straight[4] == 1 && count == 2) { myDFPlayer.play(6); lastSoundTime = millis();} 
   else if( straight[0] == 1 && straight[1] == 1 && count == 2) { myDFPlayer.play(7); lastSoundTime = millis();}
   else if( straight[1] == 1 && straight[2] == 1 && straight[3] == 1 && count == 3) { myDFPlayer.play(3); lastSoundTime = millis();}
@@ -123,6 +126,10 @@ void triggerPunch() {
     isPunching = true;
     Serial.println("PUNCH TRIGGERED!");
     digitalWrite(ledPin, HIGH); 
+    
+    // Play punch sound (0001.mp3)
+    myDFPlayer.play(1); 
+    lastSoundTime = millis();
     
     // 1. Punch Stroke (90 degrees)
     long stepsPunch = (long)((punchAngle / 360.0) * stepsPerRotation);
@@ -153,6 +160,10 @@ void updatePunch() {
         long stepsRecharge = (long)((rechargeAngle / 360.0) * stepsPerRotation);
         
         digitalWrite(dirPin, punchDirection); 
+        
+        // Play recharge sound (0004.mp3)
+        myDFPlayer.play(4);
+        lastSoundTime = millis();
         
         uint32_t stepIntervalUs = (uint32_t)(1000000.0 / rechargeSpeed);
         
@@ -265,14 +276,10 @@ void loop() {
     // Punch Check from Glove Transmissions
     if (myData.trigger_punch == 1 && !isPunching && (millis() - lastPunchEndTime >= punchCooldownMs)) {
       triggerPunch();
-      myDFPlayer.play( PUNCH_IDLE ); // Triggers "0001.mp3" file
-      lastSoundTime = millis();
     }
-    else if(punchState == PUNCH_RECHARGING && millis() - lastSoundTime > 1000){
-        myDFPlayer.play( PUNCH_RECHARGING );  //0004.mp3 file
-        lastSoundTime = millis();
+    else if (!isPunching) {
+      gestureSound(); // Only trigger gesture sounds when not punching
     }
-    else { gestureSound(); }
   }
   yield(); 
 }
