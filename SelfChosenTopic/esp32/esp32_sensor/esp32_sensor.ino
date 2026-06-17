@@ -322,6 +322,7 @@ void loop() {
     } else {
       int raw = analogRead(flexPins[i]);
       // filteredFlex[i] = ALPHA * raw + (1.0f - ALPHA) * filteredFlex[i];
+      // filteredFlex[i] = ALPHA * raw + (1.0f - ALPHA) * filteredFlex[i];
       filteredFlex[i] = kf[i].updateEstimate(raw);
       
       // 輸出對應的 0 ~ 180 度穩定角度
