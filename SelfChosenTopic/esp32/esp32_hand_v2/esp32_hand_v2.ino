@@ -114,10 +114,10 @@ void gestureSound(){
       Serial.print(" ");
   }
   Serial.println(count);
-  if( straight[0] == 1 && straight[4] == 1 && count == 2) { myDFPlayer.play(6); lastSoundTime = millis();} 
-  else if( straight[0] == 1 && straight[1] == 1 && count == 2) { myDFPlayer.play(7); lastSoundTime = millis();}
-  else if( straight[1] == 1 && straight[2] == 1 && straight[3] == 1 && count == 3) { myDFPlayer.play(3); lastSoundTime = millis();}
-  else if( count == 5) { myDFPlayer.play(4); lastSoundTime = millis();}
+  if( straight[0] == 1 && straight[4] == 1 && count == 2) { myDFPlayer.play(6); lastSoundTime = millis();}              //six
+  else if( straight[0] == 1 && straight[1] == 1 && count == 2) { myDFPlayer.play(5); lastSoundTime = millis();}           //seven
+  else if( straight[1] == 1 && straight[2] == 1 && straight[3] == 1 && count == 3) { myDFPlayer.play(3); lastSoundTime = millis();}   //three
+  else if( count == 0) { myDFPlayer.play(4); lastSoundTime = millis();}         //18hand
 }
 
 void triggerPunch() {
@@ -162,7 +162,7 @@ void updatePunch() {
         digitalWrite(dirPin, punchDirection); 
         
         // Play recharge sound (0004.mp3)
-        myDFPlayer.play(4);
+        myDFPlayer.play(2);
         lastSoundTime = millis();
         
         uint32_t stepIntervalUs = (uint32_t)(1000000.0 / rechargeSpeed);
@@ -213,7 +213,7 @@ void setup() {
     Serial.println("Warning: DFPlayer Mini not detected! Check wiring/SD card.");
   } else {
     Serial.println("DFPlayer Mini online and ready.");
-    myDFPlayer.volume(25); 
+    myDFPlayer.volume(28); 
   }
 
   WiFi.mode(WIFI_STA);
