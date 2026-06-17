@@ -5,6 +5,7 @@
 #include <Wire.h>
 #include <Preferences.h>
 #include "esp_mac.h"
+#include <SimpleKalmanFilter.h>
 
 // Pin Definitions
 const int flexPins[5] = {39, 34, 35, 32, 33}; 
@@ -16,6 +17,17 @@ const int ledPin = 2;
 // MPU6050
 Adafruit_MPU6050 mpu;
 Preferences preferences;
+
+// Kalman Filter settings
+SimpleKalmanFilter kf[5] = {
+  SimpleKalmanFilter(2, 2, 0.05),
+  SimpleKalmanFilter(5, 5, 0.05),
+  SimpleKalmanFilter(5, 5, 0.05),
+  SimpleKalmanFilter(5, 5, 0.05),
+  SimpleKalmanFilter(5, 5, 0.05)
+};
+
+float filteredFlex[5] = {2000, 2000, 2000, 2000, 2000};
 
 struct CalibrationData {
   int openVal;
@@ -42,7 +54,7 @@ bool mpuPresent = false;
 
 // Low-pass filter
 const float ALPHA = 0.2f;
-float filteredFlex[5]  = {2000, 2000, 2000, 2000, 2000};
+// float filteredFlex[5]  = {2000, 2000, 2000, 2000, 2000};
 float filteredAccX = 0.0f, filteredAccY = 0.0f, filteredAccZ = 0.0f;
 
 #if ESP_ARDUINO_VERSION >= ESP_ARDUINO_VERSION_VAL(3, 0, 0)
@@ -309,7 +321,9 @@ void loop() {
       myData.finger_angles[i] = manual_angles[i];
     } else {
       int raw = analogRead(flexPins[i]);
-      filteredFlex[i] = ALPHA * raw + (1.0f - ALPHA) * filteredFlex[i];
+      // filteredFlex[i] = ALPHA * raw + (1.0f - ALPHA) * filteredFlex[i];
+      // filteredFlex[i] = ALPHA * raw + (1.0f - ALPHA) * filteredFlex[i];
+      filteredFlex[i] = kf[i].updateEstimate(raw);
       
       // 輸出對應的 0 ~ 180 度穩定角度
       myData.finger_angles[i] = mapFlex((int)filteredFlex[i], fingerCal[i]);
