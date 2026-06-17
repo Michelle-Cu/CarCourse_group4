@@ -114,6 +114,7 @@ void gestureSound(){
   if( straight[0] == 1 && straight[4] == 1 && count == 2) { myDFPlayer.play(6); lastSoundTime = millis();} 
   else if( straight[0] == 1 && straight[1] == 1 && count == 2) { myDFPlayer.play(7); lastSoundTime = millis();}
   else if( straight[1] == 1 && straight[2] == 1 && straight[3] == 1 && count == 3) { myDFPlayer.play(3); lastSoundTime = millis();}
+  else if( count == 5) { myDFPlayer.play(5); lastSoundTime = millis();}
 }
 
 void triggerPunch() {
@@ -267,7 +268,7 @@ void loop() {
       myDFPlayer.play( PUNCH_IDLE ); // Triggers "0001.mp3" file
       lastSoundTime = millis();
     }
-    else if(punchState == PUNCH_RECHARGING && millis() - lastSoundTime > 2500){
+    else if(punchState == PUNCH_RECHARGING && millis() - lastSoundTime > 1000){
         myDFPlayer.play( PUNCH_RECHARGING );  //0004.mp3 file
         lastSoundTime = millis();
     }
