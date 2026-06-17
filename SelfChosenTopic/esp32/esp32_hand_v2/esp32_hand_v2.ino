@@ -104,7 +104,7 @@ PunchState punchState = PUNCH_IDLE; // Starts tracking at 1
 unsigned long punchPauseStartTime = 0;
 
 void gestureSound(){
-  if( millis() - lastSoundTime < 1000) return; 
+  if( millis() - lastSoundTime < 2000) return; 
   int count = 0;
   for (int i = 0; i < 5; i++) {
       int rawAngle = myData.finger_angles[i];
